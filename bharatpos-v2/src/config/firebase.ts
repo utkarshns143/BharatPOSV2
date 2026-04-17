@@ -19,7 +19,7 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 
 // Enable professional offline syncing natively
-enableIndexedDbPersistence(db).catch((err) => {
+enableIndexedDbPersistence(db).catch((err: any) => {
   if (err.code === 'failed-precondition') {
     console.warn('Multiple tabs open, offline persistence enabled in the first tab only.');
   } else if (err.code === 'unimplemented') {

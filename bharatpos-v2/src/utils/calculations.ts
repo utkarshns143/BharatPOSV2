@@ -1,4 +1,4 @@
-import { CartItem, Sale } from '../types';
+import type { CartItem, Sale } from '../types';
 
 // 1. Calculate the total of the current cart in the POS
 export const calculateCartTotal = (items: CartItem[]): number => {

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Product, Sale, Customer } from '../types';
+import type { Product, Sale, Customer } from '../types';
 
 interface DataState {
   products: Product[];
