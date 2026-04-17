@@ -106,4 +106,4 @@ export interface Customer {
   pendingUdhaar: number;
   history: CustomerHistory[];
   status?: 'VIP' | 'REGULAR' | 'RISK';
-}
+} 
