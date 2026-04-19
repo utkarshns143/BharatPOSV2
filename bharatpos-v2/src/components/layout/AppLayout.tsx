@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 
-import { ShoppingCart, BookOpen, LayoutDashboard, Package, Menu, X, Receipt, SettingsIcon } from 'lucide-react';
+import { ShoppingCart, BookOpen, LayoutDashboard, Package, Menu, X, Receipt, SettingsIcon, BarChart3, Wallet, BrainCircuit, Bot } from 'lucide-react';
 export const AppLayout: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -60,12 +60,16 @@ export const AppLayout: React.FC = () => {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1rem', flex: 1 }}>
-            <NavLink to="/" onClick={closeMenu} style={navLinkStyle}><ShoppingCart size={20} /> Point of Sale</NavLink>
+            <NavLink to="/pos" onClick={closeMenu} style={navLinkStyle}><ShoppingCart size={20} /> Point of Sale</NavLink>
             <NavLink to="/inventory" onClick={closeMenu} style={navLinkStyle}><Package size={20} /> Inventory</NavLink>
-            <NavLink to="/khata" onClick={closeMenu} style={navLinkStyle}><BookOpen size={20} /> Customer Khata</NavLink>
+            <NavLink to="/khata" onClick={closeMenu} style={navLinkStyle}><BookOpen size={20} /> Customers</NavLink>
             <NavLink to="/dashboard" onClick={closeMenu} style={navLinkStyle}><LayoutDashboard size={20} /> Dashboard</NavLink>
             <NavLink to="/sales" onClick={closeMenu} style={navLinkStyle}><Receipt size={20} /> Sales Ledger</NavLink>
             <NavLink to="/settings" onClick={closeMenu} style={navLinkStyle}><SettingsIcon size={20} /> Settings</NavLink>
+            <NavLink to="/reports" onClick={closeMenu} style={navLinkStyle}><BarChart3 size={20} /> Reports & Audit</NavLink>
+            <NavLink to="/finance" onClick={closeMenu} style={navLinkStyle}><Wallet size={20} /> Finance HQ</NavLink>
+            <NavLink to="/forecast" onClick={closeMenu} style={navLinkStyle}><BrainCircuit size={20} /> Sales Forecast</NavLink>
+          <NavLink to="/ai" onClick={closeMenu} style={navLinkStyle}><Bot size={20} /> AI Sarthi</NavLink>
           </div>
         
         </nav>

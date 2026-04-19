@@ -73,3 +73,12 @@ export interface MerchantProfile {
   lng?: number;
   qrCodeBase64?: string;
 }
+
+export interface Expense {
+  id: string;
+  amount: number;
+  category: string;
+  mode: string;
+  description: string;
+  timestamp: string;
+}
