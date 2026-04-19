@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+
 import { useDataStore } from '../../store/useDataStore';
 import { ProductCard } from '../../components/shared/ProductCard';
 import { VariantModal } from '../../components/pos/VariantModal';
@@ -7,7 +7,7 @@ import { formatCurrency } from '../../utils/formatters';
 import type { Product, Sale, CartItem } from '../../types';
 
 export const CustomerPortal: React.FC = () => {
-  const navigate = useNavigate();
+  
   
   // --- "BACKEND" CONNECTION ---
   // In Phase 8, this will fetch directly from Firestore. 

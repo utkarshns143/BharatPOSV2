@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, } from 'react';
 import { useDataStore } from '../../store/useDataStore';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -12,7 +12,7 @@ export const AI: React.FC = () => {
   const [isSynced, setIsSynced] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activeTopic, setActiveTopic] = useState<string | null>(null);
+  const [ ,setActiveTopic] = useState<string | null>(null);
   const [aiResponse, setAiResponse] = useState<{ title: string, html: string } | null>(null);
 
   // --- 1. CLOUD SYNC SIMULATION ---

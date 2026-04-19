@@ -1,7 +1,6 @@
-import { useEffect } from 'react';
+
 import { HashRouter, Routes, Route } from 'react-router-dom';
-import { useDataStore } from './store/useDataStore';
-import { fetchProductsFromDB } from './services/inventory';
+
 import Inventory from './pages/merchant/Inventory';
 import Sales from './pages/merchant/Sales';
 // Import our Layout and Pages
@@ -18,7 +17,8 @@ import Forecast from './pages/merchant/Forecast';
 import { AI } from './pages/merchant/AI';
 import { Landing } from './pages/public/Landing';
 function App() {
-  const setProducts = useDataStore((state) => state.setProducts);
+  
+  
 
   
 
