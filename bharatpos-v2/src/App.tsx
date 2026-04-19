@@ -1,36 +1,52 @@
-import { Button } from './components/ui/Button';
-import { ProductCard } from './components/shared/ProductCard';
-import type { Product } from './types';
+import { useEffect } from 'react';
+import { HashRouter, Routes, Route } from 'react-router-dom';
+import { useDataStore } from './store/useDataStore';
+import { fetchProductsFromDB } from './services/inventory';
+import Inventory from './pages/merchant/Inventory';
+import Sales from './pages/merchant/Sales';
+// Import our Layout and Pages
+import { AppLayout } from './components/layout/AppLayout';
+import PointOfSale from './pages/merchant/PointOfSale';
+import Khata from './pages/merchant/Khata';
+import Dashboard from './pages/merchant/Dashboard';
+import Settings from './pages/merchant/Settings';
+import { Login } from './pages/auth/Login';
 
 function App() {
-  // Dummy data to test the UI
-  const testProduct: Product = {
-    id: '123',
-    name: 'Aashirvaad Atta',
-    category: 'Groceries',
-    isLoose: false,
-    reorderPoint: 5,
-    variants: [{ id: 'v1', price: 250, quantity: '5 kg', stock: 10 }]
-  };
+  const setProducts = useDataStore((state) => state.setProducts);
+
+  
 
   return (
-    <div className="container" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <h1>BharatPOS UI Test</h1>
-      
-      <div style={{ display: 'flex', gap: '1rem' }}>
-        <Button variant="primary">Primary Button</Button>
-        <Button variant="secondary">Secondary Button</Button>
-        <Button variant="danger">Danger Button</Button>
-      </div>
+    <HashRouter>
+      <Routes>
 
-      <div style={{ width: '300px' }}>
-        <ProductCard 
-          product={testProduct} 
-          actionLabel="Add to Cart" 
-          onActionClick={(p: Product) => alert(`Added ${p.name} to cart!`)} 
-        />
-      </div>
-    </div>
+        {/* Public Login Route */}
+     <Route path="/login" element={<Login />} />
+
+        {/* Everything inside this Route will have the Sidebar wrapped around it */}
+        <Route element={<AppLayout />}>
+          
+          {/* Default Route (http://localhost:5173/#/) */}
+          <Route path="/" element={<PointOfSale />} />
+          
+          {/* Khata Route (http://localhost:5173/#/khata) */}
+          <Route path="/khata" element={<Khata />} />
+          
+          {/* Inventory Route */}
+          <Route path="/inventory" element={<Inventory />} />
+          {/* Sales Route */}
+          <Route path="/sales" element={<Sales />} />
+          
+          {/* Dashboard Route */}
+       <Route path="/dashboard" element={<Dashboard />} />
+          {/* Settings Route */}
+          <Route path="/settings" element={<Settings />} />
+        
+
+        </Route>
+      </Routes>
+    </HashRouter>
   );
 }
 
