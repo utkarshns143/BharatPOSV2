@@ -10,11 +10,24 @@ import { CustomerSelector } from '../../components/pos/CustomerSelector';
 import type { Product, Sale, Customer, CartItem } from '../../types';
 
 export const PointOfSale: React.FC = () => {
+
+
+
+  // Find where you import useCartStore and add discount and setDiscount
+const { items, addItem, removeItem, clearCart, setItems, discount, setDiscount } = useCartStore();
+
+// Update calculations to include discount
+const cartSubtotal = calculateCartTotal(items);
+const cartTotal = Math.max(0, cartSubtotal - discount); // Prevent negative totals
+
+const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0);
   // --- UI STATE ---
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  
+  const updateProduct = useDataStore((state) => state.updateProduct);
   
   // --- CATALOG STATE ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,12 +46,7 @@ export const PointOfSale: React.FC = () => {
   const addSale = useDataStore((state) => state.addSale);
   const updateCustomer = useDataStore((state) => state.updateCustomer);
   
-  const { items, addItem, removeItem, clearCart, setItems } = useCartStore();
   
-  // --- CALCULATIONS ---
-  const cartTotal = calculateCartTotal(items);
-  const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0);
-
   // Extract unique categories for the filter chips
   const categories = useMemo(() => {
     const cats = new Set(products.map(p => p.category));
@@ -133,6 +141,18 @@ export const PointOfSale: React.FC = () => {
     };
 
     await addSale(newSale); // Push to cloud
+    // 🛑 LOOPHOLE CLOSED: DEDUCT INVENTORY
+    for (const item of items) {
+      const productToUpdate = products.find(p => p.id === item.prodId);
+      if (productToUpdate) {
+        // Find the specific variant and subtract the stock
+        const updatedVariants = productToUpdate.variants.map(v => 
+          v.id === item.variantId ? { ...v, stock: v.stock - item.qty } : v
+        );
+        // Push the new stock level to Firebase
+        await updateProduct({ ...productToUpdate, variants: updatedVariants });
+      }
+    } 
 
     alert(`Success! Invoice ${newSale.id} created.\nCheck the Sales Ledger & Khata!`);
     clearCart();
@@ -307,11 +327,23 @@ return (
           )}
         </div>
 
-        {/* UPGRADED CART SUMMARY */}
+       {/* UPGRADED CART SUMMARY */}
         <div className="cart-summary" style={{ padding: '15px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0', boxShadow: '0 -4px 10px rgba(0,0,0,0.02)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
-                <span>Total Items</span>
-                <span>{totalItemsCount}</span>
+                <span>Subtotal ({totalItemsCount} items)</span>
+                <span>{formatCurrency(cartSubtotal)}</span>
+            </div>
+            
+            {/* 🛑 LOOPHOLE CLOSED: DISCOUNT INPUT */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', fontWeight: 600, color: '#10b981', marginBottom: '8px' }}>
+                <span>Discount (₹)</span>
+                <input 
+                  type="number" 
+                  value={discount === 0 ? '' : discount}
+                  onChange={(e) => setDiscount(Number(e.target.value) || 0)}
+                  placeholder="0"
+                  style={{ width: '80px', textAlign: 'right', border: '1px solid #a7f3d0', borderRadius: '6px', padding: '4px 8px', outline: 'none', color: '#10b981', fontWeight: 'bold' }}
+                />
             </div>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #cbd5e1' }}>
