@@ -1,5 +1,5 @@
 
-import { HashRouter, Routes, Route, BrowserRouter } from 'react-router-dom';
+import { Routes, Route, BrowserRouter } from 'react-router-dom';
 
 import Inventory from './pages/merchant/Inventory';
 import Sales from './pages/merchant/Sales';
@@ -26,10 +26,10 @@ function App() {
   
 
   return (
-    <HashRouter>
    
-    
+   <BrowserRouter basename="/BharatPOSV2/">
     <PwaUpdatePrompt />
+    
       <Routes>
          <Route path="/" element={<Landing />} />
         {/* Public Login Route */}
@@ -70,9 +70,9 @@ function App() {
         </Route>
       </Routes>
       
-      <PwaUpdatePrompt />
+      </BrowserRouter>
      
-    </HashRouter>
+    
    
   );
 }
