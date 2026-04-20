@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware'; // <-- Bring this back
+import { persist } from 'zustand/middleware';
 import { db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import type { Product, Sale, Customer, MerchantProfile, Expense } from '../types';
@@ -11,15 +11,18 @@ interface DataState {
   customers: Customer[];
   expenses: Expense[];
   
+  // Base Setters
   setProfile: (profile: MerchantProfile | null) => void;
   setProducts: (products: Product[]) => void;
   setSales: (sales: Sale[]) => void;
   setCustomers: (customers: Customer[]) => void;
   setExpenses: (expenses: Expense[]) => void;
   
+  // Cloud Actions (Firebase Sync)
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (product: Product) => Promise<void>;
   addSale: (sale: Sale) => Promise<void>;
+  updateSale: (sale: Sale) => Promise<void>; // <-- THE MISSING DEFINITION!
   addExpense: (expense: Expense) => Promise<void>;
   updateCustomer: (customer: Customer) => Promise<void>;
   
@@ -41,6 +44,10 @@ export const useDataStore = create<DataState>()(
       setCustomers: (customers) => set({ customers }),
       setExpenses: (expenses) => set({ expenses }),
 
+      // ══════════════════════════════════════════════════════════════
+      // FIREBASE CLOUD ACTIONS
+      // ══════════════════════════════════════════════════════════════
+
       addProduct: async (product) => {
         const { profile, products } = get();
         if (!profile) return;
@@ -61,6 +68,15 @@ export const useDataStore = create<DataState>()(
         const { profile, sales } = get();
         if (!profile) return;
         set({ sales: [...sales, sale] });
+        const docRef = doc(db, 'merchants', profile.merchantId, 'sales', sale.id);
+        await setDoc(docRef, sale, { merge: true });
+      },
+
+      // --- THE NEW UDHAAR RESOLVER ---
+      updateSale: async (sale) => {
+        const { profile, sales } = get();
+        if (!profile) return;
+        set({ sales: sales.map(s => s.id === sale.id ? sale : s) });
         const docRef = doc(db, 'merchants', profile.merchantId, 'sales', sale.id);
         await setDoc(docRef, sale, { merge: true });
       },
@@ -89,11 +105,8 @@ export const useDataStore = create<DataState>()(
       factoryReset: () => set({ profile: null, products: [], sales: [], customers: [], expenses: [] }),
     }),
     {
-      name: 'bharatpos-session', // Renamed to reflect it only holds the session
-      
-      // ══════════════════════════════════════════════════════════════
-      // THE MAGIC FIX: Only save the 'profile' to localStorage
-      // ══════════════════════════════════════════════════════════════
+      name: 'bharatpos-session',
+      // ONLY save the login session to local storage. Firebase handles the rest!
       partialize: (state) => ({ profile: state.profile }),
     }
   )
