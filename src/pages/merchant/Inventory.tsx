@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useDataStore } from '../../store/useDataStore';
 import { ProductForm } from '../../components/inventory/ProductForm';
 import { ProductDetailsModal } from '../../components/inventory/ProductDetailsModal';
@@ -15,6 +15,8 @@ export const Inventory: React.FC = () => {
   const [viewingProduct, setViewingProduct] = useState<any | null>(null);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // --- UPDATED STORE HOOKS ---
   const profile = useDataStore(state => state.profile);
   const products = useDataStore(state => state.products);
@@ -76,6 +78,57 @@ export const Inventory: React.FC = () => {
     if (newSet.has(id)) newSet.delete(id);
     else newSet.add(id);
     setSelectedIds(newSet);
+  };
+
+  // --- NEW: EXPORT FUNCTION ---
+  const handleExport = () => {
+    if (products.length === 0) return alert("No products to export.");
+    const dataStr = JSON.stringify(products, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `BharatPOS_Inventory_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // --- NEW: IMPORT FUNCTION ---
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile?.merchantId) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const importedData = JSON.parse(event.target?.result as string);
+        if (!Array.isArray(importedData)) throw new Error("Invalid format");
+        
+        if (!window.confirm(`Import ${importedData.length} products to your cloud database?`)) return;
+
+        // 1. Ensure all imported items have IDs
+        const sanitizedData = importedData.map(item => ({
+          ...item,
+          id: item.id || Math.random().toString(36).substring(7)
+        }));
+
+        // 2. Optimistic UI Update (Combine old and new)
+        setProducts([...products, ...sanitizedData]);
+
+        // 3. Background Cloud Sync
+        for (const prod of sanitizedData) {
+           await setDoc(doc(db, 'merchants', profile.merchantId, 'products', prod.id), prod, { merge: true });
+        }
+
+        alert("Inventory successfully imported and synced to the cloud!");
+      } catch (err) {
+        alert("Error importing file. Please ensure it is a valid BharatPOS JSON export.");
+      }
+      // Reset input so you can import the same file again if needed
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
   };
 
   // --- UPDATED: ASYNC BULK HANDLER ---
@@ -145,10 +198,25 @@ export const Inventory: React.FC = () => {
           
           <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
             <Button variant="outline" style={{ fontSize: '0.8rem', padding: '0.5rem 0.75rem', color: 'var(--primary)' }}>🌐 Cloud Synced</Button>
-            <Button variant="outline" style={{ fontSize: '0.8rem', padding: '0.5rem 0.75rem' }}>📤 Export</Button>
-            <Button variant="outline" style={{ fontSize: '0.8rem', padding: '0.5rem 0.75rem' }}>📥 Import</Button>
+            
+            {/* EXPORT BUTTON */}
+            <Button variant="outline" onClick={handleExport} style={{ fontSize: '0.8rem', padding: '0.5rem 0.75rem' }}>📤 Export</Button>
+            
+            {/* IMPORT BUTTON (Triggers hidden input) */}
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()} style={{ fontSize: '0.8rem', padding: '0.5rem 0.75rem' }}>📥 Import</Button>
+            
+            {/* HIDDEN FILE INPUT */}
+            <input 
+              type="file" 
+              accept=".json" 
+              ref={fileInputRef} 
+              style={{ display: 'none' }} 
+              onChange={handleImport} 
+            />
           </div>
 
+
+          
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <input type="text" placeholder="Search SKU, category..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ flex: 1, padding: '0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', boxSizing: 'border-box' }}/>
             <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>

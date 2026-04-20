@@ -22,9 +22,9 @@ const app = initializeApp(firebaseConfig);
 // 2. Initialize Auth
 export const auth = getAuth(app);
 
-// 3. Initialize Firestore with OFFLINE PERSISTENCE
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
-  })
+  }),
+  ignoreUndefinedProperties: true // <-- THIS SAVES THE APP FROM CRASHING
 });
