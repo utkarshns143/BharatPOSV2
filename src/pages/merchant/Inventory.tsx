@@ -6,13 +6,21 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { formatCurrency } from '../../utils/formatters';
 
+// --- NEW FIREBASE IMPORTS ---
+import { db } from '../../lib/firebase';
+import { doc, deleteDoc, setDoc } from 'firebase/firestore';
+
 export const Inventory: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'list' | 'add' | 'edit'>('list');
   const [viewingProduct, setViewingProduct] = useState<any | null>(null);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   
+  // --- UPDATED STORE HOOKS ---
+  const profile = useDataStore(state => state.profile);
   const products = useDataStore(state => state.products);
   const setProducts = useDataStore(state => state.setProducts);
+  const addProduct = useDataStore(state => state.addProduct);
+  const updateProduct = useDataStore(state => state.updateProduct);
   
   // Filter & Search State
   const [showFilters, setShowFilters] = useState(false);
@@ -24,18 +32,20 @@ export const Inventory: React.FC = () => {
   const [bulkOperation, setBulkOperation] = useState('');
   const [bulkValue, setBulkValue] = useState('');
 
-  const handleSaveProduct = (savedProduct: any) => {
+  // --- UPDATED: ASYNC SAVE HANDLER ---
+  const handleSaveProduct = async (savedProduct: any) => {
     if (activeTab === 'edit' && editingProduct) {
-      const updatedList = products.map(p => p.id === editingProduct.id ? { ...savedProduct, id: p.id } : p);
-      setProducts(updatedList);
+      // Send the update to Firebase & Local State
+      await updateProduct({ ...savedProduct, id: editingProduct.id });
       alert(`${savedProduct.name} updated!`);
     } else {
+      // Generate IDs and push new product to Firebase & Local State
       const productWithIds = {
         ...savedProduct,
         id: Math.random().toString(36).substring(7),
         variants: savedProduct.variants.map((v: any) => ({ ...v, id: Math.random().toString(36).substring(7) }))
       };
-      setProducts([...products, productWithIds]);
+      await addProduct(productWithIds);
       alert(`${savedProduct.name} added!`);
     }
     setActiveTab('list');
@@ -68,21 +78,41 @@ export const Inventory: React.FC = () => {
     setSelectedIds(newSet);
   };
 
-  const handleApplyBulk = () => {
-    if (selectedIds.size === 0 || !bulkOperation) return;
+  // --- UPDATED: ASYNC BULK HANDLER ---
+  const handleApplyBulk = async () => {
+    if (selectedIds.size === 0 || !bulkOperation || !profile?.merchantId) return;
 
     if (bulkOperation === 'delete') {
       if (!window.confirm(`Delete ${selectedIds.size} items?`)) return;
+      
+      // 1. Optimistic UI Update (Instant)
       const remainingProducts = products.filter(p => !selectedIds.has(p.id));
       setProducts(remainingProducts);
+      
+      // 2. Background Cloud Sync (Silent)
+      for (const id of selectedIds) {
+        await deleteDoc(doc(db, 'merchants', profile.merchantId, 'products', id));
+      }
+
       setSelectedIds(new Set());
       setBulkOperation('');
       alert('Items deleted successfully.');
     } 
     else if (bulkOperation === 'category') {
       if (!bulkValue.trim()) return alert('Enter a new category name.');
+      
+      // 1. Optimistic UI Update
       const updatedProducts = products.map(p => selectedIds.has(p.id) ? { ...p, category: bulkValue } : p);
       setProducts(updatedProducts);
+      
+      // 2. Background Cloud Sync
+      for (const id of selectedIds) {
+        const prod = updatedProducts.find(p => p.id === id);
+        if (prod) {
+          await setDoc(doc(db, 'merchants', profile.merchantId, 'products', id), prod, { merge: true });
+        }
+      }
+
       setSelectedIds(new Set());
       setBulkOperation('');
       setBulkValue('');
@@ -114,10 +144,9 @@ export const Inventory: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', paddingBottom: selectedIds.size > 0 ? '80px' : '0' }}>
           
           <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-            <Button variant="outline" style={{ fontSize: '0.8rem', padding: '0.5rem 0.75rem', color: 'var(--primary)' }}>🌐 Global DB</Button>
+            <Button variant="outline" style={{ fontSize: '0.8rem', padding: '0.5rem 0.75rem', color: 'var(--primary)' }}>🌐 Cloud Synced</Button>
             <Button variant="outline" style={{ fontSize: '0.8rem', padding: '0.5rem 0.75rem' }}>📤 Export</Button>
             <Button variant="outline" style={{ fontSize: '0.8rem', padding: '0.5rem 0.75rem' }}>📥 Import</Button>
-            <Button variant="outline" style={{ fontSize: '0.8rem', padding: '0.5rem 0.75rem' }}>🔄 Sync</Button>
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -186,7 +215,7 @@ export const Inventory: React.FC = () => {
                   <option value="category" style={{ color: 'black' }}>Change Category</option>
                   <option value="delete" style={{ color: 'black' }}>Delete Items</option>
                 </select>
-                {bulkOperation === 'category' && <input type="text" placeholder="New Category" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} style={{ padding: '0.5rem', borderRadius: '8px', border: 'none', width: '120px' }}/>}
+                {bulkOperation === 'category' && <input type="text" placeholder="New Category" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} style={{ padding: '0.5rem', borderRadius: '8px', border: 'none', width: '120px' }}/> }
                 <Button variant="primary" onClick={handleApplyBulk} style={{ padding: '0.5rem 1rem' }}>Apply</Button>
               </div>
             </div>
@@ -195,12 +224,21 @@ export const Inventory: React.FC = () => {
         </div>
       )}
 
+      {/* --- UPDATED: ASYNC SINGLE DELETE HANDLER --- */}
       <ProductDetailsModal 
         isOpen={!!viewingProduct}
         product={viewingProduct}
         onClose={() => setViewingProduct(null)}
         onEdit={(p) => { setViewingProduct(null); setEditingProduct(p); setActiveTab('edit'); }}
-        onDelete={(p) => { if (window.confirm(`Delete ${p.name}?`)) { setProducts(products.filter(item => item.id !== p.id)); setViewingProduct(null); } }}
+        onDelete={async (p) => { 
+          if (window.confirm(`Delete ${p.name}?`) && profile?.merchantId) { 
+            // Optimistic UI update
+            setProducts(products.filter(item => item.id !== p.id)); 
+            setViewingProduct(null); 
+            // Cloud Delete
+            await deleteDoc(doc(db, 'merchants', profile.merchantId, 'products', p.id));
+          } 
+        }}
       />
 
     </div>
