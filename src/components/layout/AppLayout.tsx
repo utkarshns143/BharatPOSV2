@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-
+import { useFirebaseData } from '../../hooks/useFirebaseData';
 import { ShoppingCart, BookOpen, LayoutDashboard, Package, Menu, X, Receipt, SettingsIcon, BarChart3, Wallet, BrainCircuit, Bot } from 'lucide-react';
 export const AppLayout: React.FC = () => {
+
+ 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const navLinkStyle = ({ isActive }: { isActive: boolean }) => ({
@@ -15,7 +17,7 @@ export const AppLayout: React.FC = () => {
   });
 
   const closeMenu = () => setIsMobileMenuOpen(false);
-
+  useFirebaseData();
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', backgroundColor: 'var(--bg-color)', flexDirection: 'column' }}>
       

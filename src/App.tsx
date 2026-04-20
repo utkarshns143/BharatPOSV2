@@ -16,10 +16,13 @@ import FinanceHQ from './pages/merchant/FinanceHQ';
 import Forecast from './pages/merchant/Forecast';
 import { AI } from './pages/merchant/AI';
 import { Landing } from './pages/public/Landing';
+
+
 function App() {
   
-  
 
+
+ 
   
 
   return (

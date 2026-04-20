@@ -1,40 +1,107 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { Product, Sale, Customer, MerchantProfile, Expense } from '../types'; // <-- Import Expense
+import { db } from '../lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import type { Product, Sale, Customer, MerchantProfile, Expense } from '../types';
 
 interface DataState {
   profile: MerchantProfile | null;
   products: Product[];
   sales: Sale[];
   customers: Customer[];
-  expenses: Expense[]; // <-- Add this
+  expenses: Expense[];
   
+  // 1. Initial Loaders (Used to load data from Firebase when the app starts)
   setProfile: (profile: MerchantProfile | null) => void;
   setProducts: (products: Product[]) => void;
   setSales: (sales: Sale[]) => void;
   setCustomers: (customers: Customer[]) => void;
-  setExpenses: (expenses: Expense[]) => void; // <-- Add this
+  setExpenses: (expenses: Expense[]) => void;
+  
+  // 2. Granular Cloud Mutations (Pushes ONLY the changed data to Firebase)
+  addProduct: (product: Product) => Promise<void>;
+  updateProduct: (product: Product) => Promise<void>;
+  addSale: (sale: Sale) => Promise<void>;
+  addExpense: (expense: Expense) => Promise<void>;
+  updateCustomer: (customer: Customer) => Promise<void>;
+  
   factoryReset: () => void;
 }
 
-export const useDataStore = create<DataState>()(
-  persist(
-    (set) => ({
-      profile: null,
-      products: [],
-      sales: [],
-      customers: [],
-      expenses: [], // <-- Initial state
-      
-      setProfile: (profile) => set({ profile }),
-      setProducts: (products) => set({ products }),
-      setSales: (sales) => set({ sales }),
-      setCustomers: (customers) => set({ customers }),
-      setExpenses: (expenses) => set({ expenses }), // <-- Action
-      factoryReset: () => set({ profile: null, products: [], sales: [], customers: [], expenses: [] }),
-    }),
-    {
-      name: 'bharatpos-local-storage',
+export const useDataStore = create<DataState>()((set, get) => ({
+  profile: null,
+  products: [],
+  sales: [],
+  customers: [],
+  expenses: [],
+  
+  // Basic state replacements
+  setProfile: (profile) => set({ profile }),
+  setProducts: (products) => set({ products }),
+  setSales: (sales) => set({ sales }),
+  setCustomers: (customers) => set({ customers }),
+  setExpenses: (expenses) => set({ expenses }),
+
+  // ══════════════════════════════════════════════════════════════
+  // CLOUD SYNC ACTIONS: Optimistic UI + Granular Firebase Writes
+  // ══════════════════════════════════════════════════════════════
+
+  addProduct: async (product) => {
+    const { profile, products } = get();
+    if (!profile) return;
+
+    // 1. Optimistic Update: Instantly show in UI
+    set({ products: [...products, product] });
+
+    // 2. Cloud Sync: Push ONLY this one product to its own document
+    const docRef = doc(db, 'merchants', profile.merchantId, 'products', product.id);
+    await setDoc(docRef, product, { merge: true });
+  },
+
+  updateProduct: async (product) => {
+    const { profile, products } = get();
+    if (!profile) return;
+
+    set({ products: products.map(p => p.id === product.id ? product : p) });
+
+    const docRef = doc(db, 'merchants', profile.merchantId, 'products', product.id);
+    await setDoc(docRef, product, { merge: true });
+  },
+
+  addSale: async (sale) => {
+    const { profile, sales } = get();
+    if (!profile) return;
+
+    set({ sales: [...sales, sale] });
+
+    const docRef = doc(db, 'merchants', profile.merchantId, 'sales', sale.id);
+    await setDoc(docRef, sale, { merge: true });
+  },
+
+  addExpense: async (expense) => {
+    const { profile, expenses } = get();
+    if (!profile) return;
+
+    set({ expenses: [...expenses, expense] });
+
+    const docRef = doc(db, 'merchants', profile.merchantId, 'expenses', expense.id);
+    await setDoc(docRef, expense, { merge: true });
+  },
+
+  updateCustomer: async (customer) => {
+    const { profile, customers } = get();
+    if (!profile) return;
+
+    // Check if customer exists to either update or add them
+    const exists = customers.find(c => c.id === customer.id);
+    if (exists) {
+      set({ customers: customers.map(c => c.id === customer.id ? customer : c) });
+    } else {
+      set({ customers: [...customers, customer] });
     }
-  )
-);
+
+    const docRef = doc(db, 'merchants', profile.merchantId, 'customers', customer.id);
+    await setDoc(docRef, customer, { merge: true });
+  },
+
+  factoryReset: () => set({ profile: null, products: [], sales: [], customers: [], expenses: [] }),
+}));
