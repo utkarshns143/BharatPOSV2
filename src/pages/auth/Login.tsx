@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDataStore } from '../../store/useDataStore';
+import { db } from '../../lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import './Login.css';
 
 export const Login: React.FC = () => {
@@ -14,65 +16,98 @@ export const Login: React.FC = () => {
   // Form State
   const [phone, setPhone] = useState('');
   const [shopName, setShopName] = useState('');
+  const [category, setCategory] = useState('');
   const [generatedId, setGeneratedId] = useState('');
 
-  // Handles Login for existing users
-  const handleLogin = (e: React.FormEvent) => {
+  // --------------------------------------------------------
+  // 1. HANDLE LOGIN (Fetch from Firestore)
+  // --------------------------------------------------------
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
-    setTimeout(() => {
+    try {
+      // Look up the merchant in Firestore using their phone number
+      const merchantRef = doc(db, 'merchants', phone);
+      const merchantSnap = await getDoc(merchantRef);
+
+      if (merchantSnap.exists()) {
+        const data = merchantSnap.data() as any;
+        
+        // Save cloud data to local Zustand store
+        setProfile(data);
+        
+        // Update UI state for the success modal
+        setGeneratedId(data.merchantId);
+        setShopName(data.shopName);
+        setShowIdModal(true);
+      } else {
+        alert("No account found with this number. Please register as a New Merchant.");
+      }
+    } catch (error) {
+      console.error("Error fetching merchant:", error);
+      alert("Failed to connect to the database. Please check your internet connection.");
+    } finally {
       setIsLoading(false);
-      // Generate a mock login session for now
-      const mockId = 'MERCH-001';
-      setGeneratedId(mockId);
-      setShopName('My Shop');
-      
-      // Save to global DB
-      setProfile({
-        merchantId: mockId,
-        shopName: 'My Shop',
-        phone: phone, // Uses actual typed phone number
-        category: 'GROCERY'
-      });
-      
-      setShowIdModal(true);
-    }, 1000);
+    }
   };
 
-  // Handles Registration & Requires Location Permission
-  const handleRegister = (e: React.FormEvent) => {
+  // --------------------------------------------------------
+  // 2. HANDLE REGISTER (Save to Firestore)
+  // --------------------------------------------------------
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    const finishAuth = () => {
-      setTimeout(() => {
-        setIsLoading(false);
+    const finishAuth = async () => {
+      try {
+        // First, check if this phone number is already registered
+        const merchantRef = doc(db, 'merchants', phone);
+        const merchantSnap = await getDoc(merchantRef);
+
+        if (merchantSnap.exists()) {
+          alert("This phone number is already registered! Please switch to Login.");
+          setIsLoading(false);
+          return;
+        }
+
+        // Generate ID and create profile object
         const newId = `BHRT-${Math.floor(1000 + Math.random() * 9000)}`;
-        setGeneratedId(newId);
-        
-        // Save real data to global DB!
-        setProfile({
+        const newProfile = {
            merchantId: newId,
            shopName: shopName,
-           phone: phone, // Uses actual typed phone number
-           category: "GROCERY"
-        });
+           phone: phone,
+           category: category || "GROCERY"
+        };
+
+        // Save new profile securely to Firestore
+        await setDoc(merchantRef, newProfile);
         
+        // Save to local Zustand store
+        setProfile(newProfile);
+        
+        // Update UI
+        setGeneratedId(newId);
         setShowIdModal(true);
-      }, 1000);
+      } catch (error) {
+        console.error("Registration error:", error);
+        alert("Failed to register. Please try again.");
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    // Trigger Location Permission Request
+    // Trigger Location Permission Request before registering
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           console.log(`Secured Location: Lat ${position.coords.latitude}, Lng ${position.coords.longitude}`);
           finishAuth();
         },
-        (_error) => {
-          alert("Location permission is required to register a new store on BharatPOS.");
-          setIsLoading(false);
+        () => {
+          // If they block location, we can still let them register for now
+          console.warn("Location blocked by user.");
+          finishAuth();
         }
       );
     } else {
@@ -105,8 +140,8 @@ export const Login: React.FC = () => {
               <p className="subtitle">Welcome! Log in or register your retail business.</p>
 
               <div className="mode-select">
-                <button className={mode === 'registered' ? 'active' : ''} onClick={() => setMode('registered')}>Registered</button>
-                <button className={mode === 'new' ? 'active' : ''} onClick={() => setMode('new')}>New Merchant</button>
+                <button type="button" className={mode === 'registered' ? 'active' : ''} onClick={() => setMode('registered')}>Registered</button>
+                <button type="button" className={mode === 'new' ? 'active' : ''} onClick={() => setMode('new')}>New Merchant</button>
               </div>
 
               {/* Login Form */}
@@ -161,7 +196,7 @@ export const Login: React.FC = () => {
                   </div>
                   <div className="input-group">
                     <label className="floating-label">Shop Category</label>
-                    <select required defaultValue="">
+                    <select required value={category} onChange={(e) => setCategory(e.target.value)}>
                       <option value="" disabled>Select category…</option>
                       <option value="GROCERY">Kirana / Grocery Store</option>
                       <option value="MEDICINE">Medical / Pharmacy</option>
