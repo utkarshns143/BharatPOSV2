@@ -6,7 +6,9 @@ interface CartState {
   addItem: (product: Product, variantId?: string, qty?: number) => void;
   removeItem: (prodId: string, variantId: string) => void;
   clearCart: () => void;
+  setItems: (items: CartItem[]) => void; 
 }
+
 
 export const useCartStore = create<CartState>((set) => ({
   items: [],
@@ -54,6 +56,6 @@ export const useCartStore = create<CartState>((set) => ({
   removeItem: (prodId, variantId) => set((state) => ({
     items: state.items.filter(item => !(item.prodId === prodId && item.variantId === variantId))
   })),
-
+ setItems: (items) => set({ items }),
   clearCart: () => set({ items: [] })
 }));
