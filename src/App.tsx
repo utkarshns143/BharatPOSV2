@@ -63,9 +63,10 @@ function App() {
           {/* AI Assistant Route */}
           <Route path="/ai" element={<AI />} />
           {/* The silent listener */}
-    <PwaUpdatePrompt />
+    
         </Route>
       </Routes>
+      <PwaUpdatePrompt />
     </HashRouter>
    
   );
