@@ -16,7 +16,7 @@ import FinanceHQ from './pages/merchant/FinanceHQ';
 import Forecast from './pages/merchant/Forecast';
 import { AI } from './pages/merchant/AI';
 import { Landing } from './pages/public/Landing';
-
+import { PwaUpdatePrompt } from './components/shared/PwaUpdatePrompt';
 
 function App() {
   
@@ -62,9 +62,12 @@ function App() {
           <Route path="/forecast" element={<Forecast />} />
           {/* AI Assistant Route */}
           <Route path="/ai" element={<AI />} />
+          {/* The silent listener */}
+    <PwaUpdatePrompt />
         </Route>
       </Routes>
     </HashRouter>
+   
   );
 }
 
