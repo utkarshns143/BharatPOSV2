@@ -141,14 +141,13 @@ export const PointOfSale: React.FC = () => {
     setIsCheckoutModalOpen(false);
     setIsMobileCartOpen(false); 
   };
-
-  return (
+return (
     <div className="pos-container">
       
       {/* ================= LEFT PANE: INVENTORY ================= */}
       <div className="left-pane">
         
-        {/* HTML Merged: Catalog Header */}
+        {/* Catalog Header */}
         <div className="catalog-header">
             <div className="search-bar-wrapper">
                 <div className="search-box">
@@ -163,7 +162,7 @@ export const PointOfSale: React.FC = () => {
                 </div>
             </div>
             
-            {/* HTML Merged: Dynamic Category Chips */}
+            {/* Dynamic Category Chips */}
             <div className="cat-filters" style={{ display: 'flex', gap: '8px', marginTop: '10px', overflowX: 'auto', paddingBottom: '5px' }}>
                 {categories.map(cat => (
                   <button 
@@ -211,8 +210,8 @@ export const PointOfSale: React.FC = () => {
       {/* ================= RIGHT PANE: CART ================= */}
       <div className={`right-pane ${isMobileCartOpen ? 'open' : ''}`}>
         
-        {/* HTML Merged: Cart Header with Hold Buttons */}
-        <div className="cart-header">
+        {/* Cart Header with Hold Buttons */}
+        <div className="cart-header" style={{ padding: '15px', borderBottom: '1px solid var(--border)', backgroundColor: '#f8fafc' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                 <h3 style={{ margin:0, fontSize:'15px', fontWeight:800, display:'flex', alignItems:'center', gap:'8px' }}>
                     🛒 Current Bill
@@ -243,41 +242,81 @@ export const PointOfSale: React.FC = () => {
           />
         </div>
         
-        {/* HTML Merged: Cart Items List */}
-        <div className="cart-items">
+        {/* UPGRADED CART ITEMS LIST */}
+        <div className="cart-items" style={{ flex: 1, overflowY: 'auto', padding: '15px', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {items.length === 0 ? (
-            <div style={{ textAlign: 'center', marginTop: '2rem', color: 'var(--text-muted)' }}>
-              <i className="fa-solid fa-basket-shopping" style={{ fontSize: '3rem', opacity: 0.2, marginBottom: '1rem' }}></i>
-              <p>Scan or add items to bill</p>
+            <div style={{ textAlign: 'center', marginTop: '4rem', color: '#94a3b8' }}>
+              <div style={{ fontSize: '3.5rem', opacity: 0.4, marginBottom: '1rem' }}>🛍️</div>
+              <p style={{ fontWeight: 600, fontSize: '1.1rem' }}>Scan or add items to bill</p>
             </div>
           ) : (
             items.map((item) => (
-              <div key={`${item.prodId}-${item.variantId}`} className="cart-item">
-                <div className="ci-details">
-                  <div className="ci-name">{item.name}</div>
-                  <div className="ci-meta">{item.variantName}</div>
-                  <div className="ci-meta" style={{ marginTop: '4px', fontWeight: 'bold' }}>
-                    {item.qty} x {formatCurrency(item.price)}
+              <div key={`${item.prodId}-${item.variantId}`} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'stretch',
+                padding: '12px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+              }}>
+                {/* Left: Product Info */}
+                <div style={{ flex: 1, paddingRight: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '14px', color: '#0f172a', marginBottom: '6px', lineHeight: 1.2 }}>
+                      {item.name}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '10px', color: '#475569', fontWeight: 700, backgroundColor: '#f1f5f9', padding: '4px 8px', borderRadius: '6px', textTransform: 'uppercase' }}>
+                        {item.variantName}
+                      </span>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>
+                        {formatCurrency(item.price)} / unit
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="ci-pricing">
-                  <button className="ci-del" onClick={() => removeItem(item.prodId, item.variantId)}>✕</button>
-                  <div className="ci-total">{formatCurrency(item.total)}</div>
+
+                {/* Right: Quantity & Total Controls */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between', minWidth: '80px' }}>
+                  <button
+                    onClick={() => removeItem(item.prodId, item.variantId)}
+                    style={{
+                      background: '#fee2e2', border: 'none', color: '#ef4444',
+                      width: '26px', height: '26px', borderRadius: '6px',
+                      cursor: 'pointer', fontWeight: 'bold', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', fontSize: '12px'
+                    }}
+                    title="Remove item"
+                  >
+                    ✕
+                  </button>
+                  <div style={{ textAlign: 'right', marginTop: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Qty</span>
+                      <span style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>{item.qty}</span>
+                    </div>
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#10b981', fontFamily: 'monospace' }}>
+                      {formatCurrency(item.total)}
+                    </div>
+                  </div>
                 </div>
               </div>
             ))
           )}
         </div>
 
-        {/* HTML Merged: Cart Summary & Create Bill Button */}
-        <div className="cart-summary">
-            <div className="summary-row">
-                <span>Items: <span>{totalItemsCount}</span></span>
-                <span>Subtotal: <span style={{ fontFamily:'monospace' }}>{formatCurrency(cartTotal)}</span></span>
+        {/* UPGRADED CART SUMMARY */}
+        <div className="cart-summary" style={{ padding: '15px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0', boxShadow: '0 -4px 10px rgba(0,0,0,0.02)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
+                <span>Total Items</span>
+                <span>{totalItemsCount}</span>
             </div>
-            <div className="summary-total">
-                <span>Grand Total:</span>
-                <span>{formatCurrency(cartTotal)}</span>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #cbd5e1' }}>
+                <span style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>Grand Total</span>
+                <span style={{ fontSize: '22px', fontWeight: 800, color: '#10b981', fontFamily: 'monospace' }}>{formatCurrency(cartTotal)}</span>
             </div>
 
             <div style={{ marginTop: '15px' }}>
@@ -285,19 +324,21 @@ export const PointOfSale: React.FC = () => {
                 onClick={() => setIsCheckoutModalOpen(true)} 
                 disabled={items.length === 0}
                 style={{ 
-                  width: '100%', padding: '15px', fontSize: '15px', fontWeight: 800, 
-                  backgroundColor: items.length === 0 ? 'var(--bg-input)' : 'var(--primary)', 
-                  color: items.length === 0 ? 'var(--text-muted)' : 'white', 
-                  border: 'none', borderRadius: '8px', cursor: items.length === 0 ? 'not-allowed' : 'pointer',
-                  boxShadow: items.length === 0 ? 'none' : '0 6px 20px rgba(99, 102, 241, 0.4)'
+                  width: '100%', padding: '16px', fontSize: '16px', fontWeight: 800, 
+                  backgroundColor: items.length === 0 ? '#f1f5f9' : 'var(--primary)', 
+                  color: items.length === 0 ? '#94a3b8' : 'white', 
+                  border: 'none', borderRadius: '12px', cursor: items.length === 0 ? 'not-allowed' : 'pointer',
+                  boxShadow: items.length === 0 ? 'none' : '0 8px 20px rgba(99, 102, 241, 0.35)',
+                  transition: 'all 0.2s ease-in-out'
                 }}>
-                <i className="fa-solid fa-check-circle"></i> Create Bill
+                Checkout &nbsp;➔
               </button>
             </div>
         </div>
-      </div>
 
-      {/* ================= HTML Merged: MOBILE FAB BUTTON ================= */}
+      </div> {/* <--- THIS WAS THE MISSING CLOSING DIV FOR RIGHT-PANE */}
+
+      {/* ================= MOBILE FAB BUTTON ================= */}
       <div className="mobile-cart-fab" onClick={() => setIsMobileCartOpen(true)} style={{ display: window.innerWidth <= 900 ? 'flex' : 'none' }}>
         🛒
         {totalItemsCount > 0 && <div className="mobile-cart-badge">{totalItemsCount}</div>}
