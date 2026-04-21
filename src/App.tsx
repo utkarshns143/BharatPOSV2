@@ -1,9 +1,7 @@
-
 import { Routes, Route, HashRouter } from 'react-router-dom';
 
 import Inventory from './pages/merchant/Inventory';
 import Sales from './pages/merchant/Sales';
-// Import our Layout and Pages
 import { AppLayout } from './components/layout/AppLayout';
 import PointOfSale from './pages/merchant/PointOfSale';
 import Khata from './pages/merchant/Khata';
@@ -19,61 +17,33 @@ import { Landing } from './pages/public/Landing';
 import { PwaUpdatePrompt } from './components/shared/PwaUpdatePrompt';
 
 function App() {
-  
-
-
- 
-  
-
   return (
-   
    <HashRouter> 
-    <PwaUpdatePrompt />
+      <PwaUpdatePrompt />
     
       <Routes>
-         <Route path="/BharatPOSV2/" element={<Landing />} />
+        {/* FIX: Change path from "/BharatPOSV2/" back to "/" */}
+        <Route path="/" element={<Landing />} />
+        
         {/* Public Login Route */}
-     <Route path="/login" element={<Login />} />
-      <Route path="/khata-app" element={<CustomerPortal />} /> {/* NEW CUSTOMER PORTAL */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/khata-app" element={<CustomerPortal />} />
 
         {/* Everything inside this Route will have the Sidebar wrapped around it */}
         <Route element={<AppLayout />}>
-          
-          {/* Default Route (http://localhost:5173/#/) */}
           <Route path="/pos" element={<PointOfSale />} />
-          
-         
-
-          {/* Reports Route (http://localhost:5173/#/reports) */}
           <Route path="/reports" element={<Reports />} />
-         
-
-          {/* Inventory Route */}
           <Route path="/inventory" element={<Inventory />} />
-          {/* Dashboard Route */}
-       <Route path="/dashboard" element={<Dashboard />} />
-          {/* Sales Route */}
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/sales" element={<Sales />} />
-           {/* Khata Route (http://localhost:5173/#/khata) */}
           <Route path="/khata" element={<Khata />} />
-          
-       {/* Finance HQ Route */}
-        <Route path="/finance" element={<FinanceHQ />} />
-          {/* Settings Route */}
+          <Route path="/finance" element={<FinanceHQ />} />
           <Route path="/settings" element={<Settings />} />
-          {/* Sales Forecast Route */}
           <Route path="/forecast" element={<Forecast />} />
-          {/* AI Assistant Route */}
           <Route path="/ai" element={<AI />} />
-          {/* The silent listener */}
-    
         </Route>
       </Routes>
-      
-     </HashRouter>
-     
-    
-   
+    </HashRouter>
   );
 }
 
