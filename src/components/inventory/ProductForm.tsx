@@ -10,7 +10,6 @@ interface ProductFormProps {
 }
 
 export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onSave, onCancel }) => {
-  // Config Settings (from the gear icon)
   const [cfgAdvFields, setCfgAdvFields] = useState(false);
   const [cfgLoose, setCfgLoose] = useState(false);
   const [cfgBatch, setCfgBatch] = useState(false);
@@ -19,31 +18,35 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onSave, o
   // Form State
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
+  const [subCategory, setSubCategory] = useState(''); // NEW: Advanced Categorization
   const [reorderPoint, setReorderPoint] = useState<number>(5);
   const [batchId, setBatchId] = useState('');
   
-  // GST Details
   const [showGst, setShowGst] = useState(false);
   const [hsn, setHsn] = useState('');
   const [gstRate, setGstRate] = useState<number | ''>('');
   const [priceType, setPriceType] = useState<'inclusive' | 'exclusive'>('inclusive');
 
-  // Scanner UI State
-  const [isScanning, setIsScanning] = useState(false);
-
-  // Variant Engine
   const [variants, setVariants] = useState<Omit<ProductVariant, 'id'>[]>([
-    { quantity: '1 pc', price: 0, stock: 0 }
+    { quantity: '', price: 0, stock: 0 }
   ]);
 
-  // Auto-fill form if editing an existing product
   useEffect(() => {
     if (initialData) {
       setName(initialData.name);
-      setCategory(initialData.category);
+      
+      // Split category if it has a sub-category (e.g., "Grocery > Dal")
+      if (initialData.category.includes(' > ')) {
+        const parts = initialData.category.split(' > ');
+        setCategory(parts[0]);
+        setSubCategory(parts[1]);
+      } else {
+        setCategory(initialData.category);
+      }
+      
       setVariants(initialData.variants);
-      setIsLoose(initialData.isLoose);
-      setReorderPoint(initialData.reorderPoint);
+      setCfgLoose(initialData.isLoose || false);
+      setReorderPoint(initialData.reorderPoint || 5);
       setHsn(initialData.hsn || '');
       setGstRate(initialData.gstRate || '');
       setPriceType(initialData.priceType || 'inclusive');
@@ -57,30 +60,25 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onSave, o
     }
   }, [initialData]);
 
-  // Toggles Loose from internal state since it maps to cfgLoose visually
-  const setIsLoose = (val: boolean) => setCfgLoose(val);
-
   const handleVariantChange = (index: number, field: keyof ProductVariant, value: string | number) => {
     const newVariants = [...variants];
     newVariants[index] = { ...newVariants[index], [field]: value };
     setVariants(newVariants);
   };
 
-  const handleRemoveVariant = (index: number) => {
-    setVariants(variants.filter((_, i) => i !== index));
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || variants.some(v => !v.quantity || v.price <= 0)) {
-      alert("Please fill in the product name and ensure all variants have a price.");
+      alert("Please fill in the product name and ensure all variants have a name/quantity and price.");
       return;
     }
 
+    const finalCategory = subCategory ? `${category.trim()} > ${subCategory.trim()}` : category.trim() || 'Uncategorized';
+
     onSave({
-      ...(initialData ? { id: initialData.id } : {}), // Keep ID if editing
+      ...(initialData ? { id: initialData.id } : {}),
       name,
-      category: category || 'Uncategorized',
+      category: finalCategory,
       variants: variants as ProductVariant[],
       isLoose: cfgLoose,
       reorderPoint,
@@ -89,12 +87,6 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onSave, o
       priceType,
       batchId
     } as Product | Omit<Product, 'id'>);
-
-    if (!initialData) {
-      // Reset Form only if adding new
-      setName(''); setCategory(''); setBatchId(''); setHsn(''); setGstRate('');
-      setVariants([{ quantity: '1 pc', price: 0, stock: 0 }]);
-    }
   };
 
   const inputStyle = { width: '100%', boxSizing: 'border-box' as const, padding: '0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', outline: 'none' };
@@ -103,42 +95,28 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onSave, o
     <form onSubmit={handleSubmit} style={{ width: '100%', boxSizing: 'border-box' }}>
       <Card padding="1.5rem" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', boxSizing: 'border-box' }}>
         
-        {/* Header Toolbar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
           <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.2rem' }}>
             <span style={{ backgroundColor: '#eff6ff', color: 'var(--primary)', padding: '0.5rem', borderRadius: '8px' }}>📦</span>
             {initialData ? 'Edit Product' : 'Product Engine'}
           </h2>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <Button type="button" variant="outline" onClick={() => setIsScanning(!isScanning)} style={{ color: 'var(--primary)', borderColor: 'var(--primary)', padding: '0.5rem 0.75rem' }}>
-              📷 Lens
-            </Button>
             <Button type="button" variant="outline" onClick={() => setShowSettings(!showSettings)} style={{ padding: '0.5rem 0.75rem' }}>
-              ⚙️ Settings
+              ⚙️ Config
             </Button>
           </div>
         </div>
 
-        {isScanning && (
-          <div style={{ backgroundColor: '#0F172A', borderRadius: 'var(--radius)', border: '3px solid var(--primary)', padding: '1rem', textAlign: 'center', color: 'white' }}>
-            <div style={{ height: '200px', backgroundColor: 'black', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}>
-              [Camera Preview / QuaggaJS mounts here]
-            </div>
-            <Button type="button" variant="danger" onClick={() => setIsScanning(false)}>Stop Lens</Button>
-          </div>
-        )}
-
         {showSettings && (
           <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-            <h4 style={{ margin: '0 0 1rem 0' }}>Form Configuration</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}>
-                Enable Advanced Fields (Alerts, HSN)
-                <input type="checkbox" checked={cfgAdvFields} onChange={e => setCfgAdvFields(e.target.checked)} style={{ width: '20px', height: '20px', accentColor: 'var(--primary)' }}/>
+                Enable Sell By Weight (Fractional Qty)
+                <input type="checkbox" checked={cfgLoose} onChange={e => setCfgLoose(e.target.checked)} style={{ width: '20px', height: '20px', accentColor: 'var(--primary)' }}/>
               </label>
               <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}>
-                Enable Sell By Weight (Loose)
-                <input type="checkbox" checked={cfgLoose} onChange={e => setCfgLoose(e.target.checked)} style={{ width: '20px', height: '20px', accentColor: 'var(--primary)' }}/>
+                Enable Advanced Fields (Alerts)
+                <input type="checkbox" checked={cfgAdvFields} onChange={e => setCfgAdvFields(e.target.checked)} style={{ width: '20px', height: '20px', accentColor: 'var(--primary)' }}/>
               </label>
               <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}>
                 Enable Batch System (Lot No.)
@@ -150,41 +128,60 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onSave, o
         
         {/* Core Inputs */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-          <div style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <div style={{ flex: '1 1 100%', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
             <label style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Product Name *</label>
-            <input type="text" value={name} onChange={e => setName(e.target.value)} required style={inputStyle} />
+            <input type="text" value={name} onChange={e => setName(e.target.value)} required style={inputStyle} placeholder="e.g. Aashirvaad Atta" />
           </div>
           <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <label style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Category</label>
-            <input type="text" value={category} onChange={e => setCategory(e.target.value)} style={inputStyle} list="catList" />
-            <datalist id="catList"><option value="Groceries"/><option value="Dairy"/><option value="Snacks"/></datalist>
+            <label style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Main Category</label>
+            <input type="text" value={category} onChange={e => setCategory(e.target.value)} style={inputStyle} list="catList" placeholder="e.g. Grocery" />
+            <datalist id="catList"><option value="Grocery"/><option value="Dairy"/><option value="Snacks"/></datalist>
+          </div>
+          <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Sub-Category (Optional)</label>
+            <input type="text" value={subCategory} onChange={e => setSubCategory(e.target.value)} style={inputStyle} placeholder="e.g. Flours & Grains" />
           </div>
         </div>
 
         {/* Variant Engine */}
-        <div style={{ backgroundColor: '#f9f9f9', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', boxSizing: 'border-box' }}>
+        <div style={{ backgroundColor: cfgLoose ? '#fdf4ff' : '#f9f9f9', padding: '1rem', borderRadius: 'var(--radius)', border: cfgLoose ? '1px solid #e879f9' : '1px solid var(--border)', boxSizing: 'border-box' }}>
+          
+          {cfgLoose && (
+            <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#fae8ff', color: '#86198f', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
+              ⚖️ <b>Sell By Weight Mode:</b> Define your "Base Unit" (e.g. 1 Kg). Enter the price per Base Unit. Enter total stock in Base Units.
+            </div>
+          )}
+
           {variants.map((variant, index) => (
             <div key={index} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end', marginBottom: '1rem', backgroundColor: 'white', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', boxSizing: 'border-box' }}>
               <div style={{ flex: '1 1 120px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>Size / Type</label>
-                <input type="text" value={variant.quantity} onChange={e => handleVariantChange(index, 'quantity', e.target.value)} required style={inputStyle} placeholder="1 kg / Red" />
+                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: cfgLoose ? '#a21caf' : 'var(--text-muted)' }}>
+                  {cfgLoose ? 'Base Unit (e.g. 1 Kg)' : 'Size / Pack Type'}
+                </label>
+                <input type="text" value={variant.quantity} onChange={e => handleVariantChange(index, 'quantity', e.target.value)} required style={inputStyle} placeholder={cfgLoose ? "1 Kg" : "500g Pack"} />
               </div>
               <div style={{ flex: '1 1 100px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--success)' }}>Price (₹)</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--success)' }}>
+                  {cfgLoose ? 'Price per Base Unit (₹)' : 'Price (₹)'}
+                </label>
                 <input type="number" value={variant.price || ''} onChange={e => handleVariantChange(index, 'price', Number(e.target.value))} required min="0" style={inputStyle} />
               </div>
               <div style={{ flex: '1 1 80px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>Stock</label>
-                <input type="number" value={variant.stock || ''} onChange={e => handleVariantChange(index, 'stock', Number(e.target.value))} required min="0" style={inputStyle} />
+                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>
+                  {cfgLoose ? 'Total Stock (Base Units)' : 'Stock Count'}
+                </label>
+                <input type="number" value={variant.stock || ''} onChange={e => handleVariantChange(index, 'stock', Number(e.target.value))} required min="0" step={cfgLoose ? "0.01" : "1"} style={inputStyle} />
               </div>
               {variants.length > 1 && (
-                <button type="button" onClick={() => handleRemoveVariant(index)} style={{ padding: '0.75rem', backgroundColor: 'var(--danger)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', height: '42px', flex: '0 0 auto' }}>✕</button>
+                <button type="button" onClick={() => setVariants(variants.filter((_, i) => i !== index))} style={{ padding: '0.75rem', backgroundColor: 'var(--danger)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', height: '42px', flex: '0 0 auto' }}>✕</button>
               )}
             </div>
           ))}
-          <Button type="button" variant="outline" onClick={() => setVariants([...variants, { quantity: '', price: 0, stock: 0 }])} style={{ width: '100%', borderStyle: 'dashed', color: 'var(--primary)' }}>
-            ➕ Add Type (Color/Size/Wt)
-          </Button>
+          {!cfgLoose && (
+            <Button type="button" variant="outline" onClick={() => setVariants([...variants, { quantity: '', price: 0, stock: 0 }])} style={{ width: '100%', borderStyle: 'dashed', color: 'var(--primary)' }}>
+              ➕ Add Size / Variant
+            </Button>
+          )}
         </div>
 
         {/* GST Configuration */}
