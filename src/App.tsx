@@ -31,7 +31,7 @@ function App() {
     <PwaUpdatePrompt />
     
       <Routes>
-         <Route path="/" element={<Landing />} />
+         <Route path="/BharatPOSV2/" element={<Landing />} />
         {/* Public Login Route */}
      <Route path="/login" element={<Login />} />
       <Route path="/khata-app" element={<CustomerPortal />} /> {/* NEW CUSTOMER PORTAL */}
