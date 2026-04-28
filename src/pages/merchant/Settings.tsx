@@ -36,7 +36,7 @@ export const Settings: React.FC = () => {
       setAddress(profile.address || '');
       setLat(profile.lat);
       setLng(profile.lng);
-      setQrCode(profile.qrCodeBase64);
+      setQrCode(profile.qrcodebase64);
     }
   }, [profile]);
 
@@ -44,7 +44,7 @@ export const Settings: React.FC = () => {
   const handleSaveProfile = () => {
     if (!profile) return;
     const updatedProfile: MerchantProfile = {
-      ...profile, shopName, category, gstin, address, lat, lng, qrCodeBase64: qrCode
+      ...profile, shopName, category, gstin, address, lat, lng, qrcodebase64: qrCode
     };
     setProfile(updatedProfile);
     alert('Profile saved successfully!');

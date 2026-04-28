@@ -1,14 +1,19 @@
 // File: src/types.ts
-
 export interface MerchantProfile {
   merchantId: string;
   shopName: string;
   category: string;
   mobile: string;
+  phone?: string;          // Added to fix Settings.tsx
   isBranch: boolean;
   parentId?: string;
   lat?: number;
   lng?: number;
+  
+  // --- NEW SETTINGS FIELDS ---
+  gstin?: string;          
+  address?: string;        
+  qrcodebase64?: string;   
 }
 
 export interface AppUser {

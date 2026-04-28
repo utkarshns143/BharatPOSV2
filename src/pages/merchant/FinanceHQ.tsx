@@ -66,8 +66,7 @@ export const FinanceHQ: React.FC = () => {
     if (expenses.length === 0) return alert("No expenses to export.");
     const headers = ['Date', 'Expense ID', 'Category', 'Mode', 'Amount', 'Description'];
     const rows = expenses.map(e => [
-      new Date(e.timestamp).toLocaleDateString(), e.id, e.category, e.mode, e.amount, `"${e.description}"`
-    ]);
+new Date(e.timestamp || e.date || new Date().toISOString()).toLocaleDateString(), e.id, e.category, e.mode || 'Cash', e.amount, `"${e.description || e.note || ''}"`    ]);
     const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].map(e => e.join(",")).join("\n");
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csvContent));
@@ -122,8 +121,7 @@ export const FinanceHQ: React.FC = () => {
 
         // Sum daily expenses
         const dailyExpense = expenses.reduce((sum, exp) => {
-          const eDate = new Date(exp.timestamp);
-          if (eDate.toDateString() === d.toDateString()) return sum + exp.amount;
+const eDate = new Date(exp.timestamp || exp.date || new Date().toISOString());          if (eDate.toDateString() === d.toDateString()) return sum + exp.amount;
           return sum;
         }, 0);
         expenseData.push(dailyExpense);
@@ -277,8 +275,7 @@ export const FinanceHQ: React.FC = () => {
                     <div style={{ overflow: 'hidden' }}>
                       <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{exp.category}</div>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '4px', display: 'flex', gap: '8px' }}>
-                        <span>{new Date(exp.timestamp).toLocaleDateString()}</span> • <span>{exp.mode}</span>
-                      </div>
+<span>{new Date(exp.timestamp || exp.date || new Date().toISOString()).toLocaleDateString()}</span> • <span>{exp.mode || 'Cash'}</span>                      </div>
                       {exp.description && exp.description !== 'No notes' && (
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontStyle: 'italic' }}>"{exp.description}"</div>
                       )}
