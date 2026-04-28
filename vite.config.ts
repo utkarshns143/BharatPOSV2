@@ -31,5 +31,5 @@ export default defineConfig({
       }
     })
   ],
-  base: '/BharatPOSV2/', // <-- Kept your exact GitHub repo base path!
+  base: '/', // <-- Kept your exact GitHub repo base path!
 })
