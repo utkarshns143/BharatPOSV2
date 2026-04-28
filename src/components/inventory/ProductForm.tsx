@@ -3,7 +3,7 @@
 import React, { useState, useRef,  } from 'react';
 import { useDataStore } from '../../store/useDataStore';
 import type { Product, ProductVariant } from '../../types';
-
+import './ProductForm.css'; // <-- ADD THIS LINE!
 // Let TypeScript know Quagga might be loaded globally via index.html
 declare const Quagga: any;
 

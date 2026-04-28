@@ -1,0 +1,285 @@
+/* File: src/components/inventory/ProductForm.css */
+
+/* --- PANELS & HEADERS --- */
+.panel {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border, #e2e8f0);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  border-bottom: 2px dashed var(--border, #e2e8f0);
+  padding-bottom: 16px;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.panel-title-icon.blue {
+  background: #eff6ff;
+  color: #3b82f6;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+}
+
+/* --- FLOATING LABEL INPUTS --- */
+.form-group {
+  position: relative;
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.form-input, .form-select {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  outline: none;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.form-select {
+  appearance: auto;
+}
+
+.form-input:focus, .form-select:focus {
+  border-color: #6366f1;
+  background: white;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+}
+
+.floating-label {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  pointer-events: none;
+  transition: all 0.2s ease;
+  background: transparent;
+  padding: 0 4px;
+}
+
+/* Floating Animation */
+.form-input:focus ~ .floating-label,
+.form-input:not(:placeholder-shown) ~ .floating-label {
+  top: -9px;
+  left: 12px;
+  font-size: 11px;
+  color: #6366f1;
+  background: white;
+  border-radius: 4px;
+  font-weight: 800;
+}
+
+/* --- HIERARCHICAL VARIANT ENGINE --- */
+.type-box {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  position: relative;
+}
+
+.variant-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.adv-only-field {
+  display: none;
+  margin-top: 12px;
+}
+
+.type-box.show-adv .adv-only-field {
+  display: block;
+  animation: fadeIn 0.3s ease;
+}
+
+/* --- BUTTONS --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.btn-primary {
+  width: 100%;
+  background: #6366f1;
+  color: white;
+  border: none;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #4f46e5;
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.btn-outline {
+  background: white;
+  border: 1.5px solid #cbd5e1;
+  color: #475569;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.btn-dashed {
+  background: rgba(99, 102, 241, 0.05);
+  border: 1.5px dashed #6366f1;
+  color: #6366f1;
+  border-radius: 10px;
+  padding: 12px;
+  width: 100%;
+}
+
+/* --- AI LENS & SCANNER --- */
+.scanner-box {
+  position: relative;
+  width: 100%;
+  height: 250px;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  border: 2px solid #6366f1;
+}
+
+#cameraPreview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-laser {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: #10b981;
+  box-shadow: 0 0 10px #10b981, 0 0 20px #10b981;
+  animation: scan 2s linear infinite;
+  z-index: 10;
+}
+
+@keyframes scan {
+  0% { top: 0; }
+  50% { top: 100%; }
+  100% { top: 0; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- TOGGLE SWITCH (Loose Item) --- */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #cbd5e1;
+  transition: .3s;
+  border-radius: 24px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #6366f1;
+}
+
+input:checked + .slider:before {
+  transform: translateX(20px);
+}
+
+/* ACCORDION TOGGLE */
+.tier-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  color: #475569;
+  cursor: pointer;
+  margin-bottom: 16px;
+  transition: all 0.2s ease;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
