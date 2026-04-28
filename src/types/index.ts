@@ -1,3 +1,5 @@
+// File: src/types/index.ts
+
 // --- USER & SHOP SCHEMAS ---
 export interface ShopProfile {
   merchantId: string;
@@ -17,20 +19,24 @@ export interface AppUser {
   role: 'admin' | 'staff';
 }
 
-// --- INVENTORY SCHEMAS ---
+// --- INVENTORY SCHEMAS (UPGRADED FROM JS VERSION) ---
 export interface ProductBrand {
   name: string;
 }
 
 export interface ProductVariant {
   id: string;
-  quantity: string;
+  type?: string;          // NEW: Hierarchical Type (e.g., "Biscuit")
+  brandName?: string;     // NEW: Hierarchical Brand (e.g., "Parle-G")
+  quantity: string;       // Existing: Display Name (e.g., "Biscuit - Parle-G")
   price: number;
   stock: number;
-  barcode?: string;
-  expiryDate?: string;
   baseQty?: number;
   baseUnit?: string;
+  barcode?: string;
+  costPrice?: number | string; // NEW: Cost tracking for FinanceHQ
+  expiryDate?: string;    // NEW: Expiry tracking
+  dateAdded?: string;     // NEW: Date added for "Newest" filtering
   brands?: ProductBrand[];
 }
 
@@ -38,8 +44,13 @@ export interface Product {
   id: string;
   name: string;
   category: string;
+  hsn?: string;           // NEW: HSN Code
+  gstRate?: string | number; // NEW: GST %
+  priceType?: 'inclusive' | 'exclusive'; // NEW: Tax handling
+  batchId?: string;       // NEW: Lot/Batch No.
   isLoose: boolean;
-  reorderPoint: number;
+  reorderPoint: number | string;
+  dateAdded?: string;     // NEW: For Sorting
   variants: ProductVariant[];
   _branchId?: string;
   _branchName?: string;
@@ -106,4 +117,4 @@ export interface Customer {
   pendingUdhaar: number;
   history: CustomerHistory[];
   status?: 'VIP' | 'REGULAR' | 'RISK';
-} 
+}

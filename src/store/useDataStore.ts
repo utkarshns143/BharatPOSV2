@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { db } from '../lib/firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../config/firebase'; // Ensure this matches your path! (or '../lib/firebase')
+import { doc, setDoc, writeBatch, getDoc } from 'firebase/firestore';
 import type { Product, Sale, Customer, MerchantProfile, Expense } from '../types';
 
 interface DataState {
@@ -9,22 +9,28 @@ interface DataState {
   products: Product[];
   sales: Sale[];
   customers: Customer[];
-  expenses: Expense[];
+  expenses: Expense[]; // <-- Fixed from any[]
   
   // Base Setters
   setProfile: (profile: MerchantProfile | null) => void;
   setProducts: (products: Product[]) => void;
   setSales: (sales: Sale[]) => void;
   setCustomers: (customers: Customer[]) => void;
-  setExpenses: (expenses: Expense[]) => void;
+  setExpenses: (expenses: Expense[]) => void; // <-- Fixed from any[]
   
-  // Cloud Actions (Firebase Sync)
+  // Single Actions
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (product: Product) => Promise<void>;
   addSale: (sale: Sale) => Promise<void>;
-  updateSale: (sale: Sale) => Promise<void>; // <-- THE MISSING DEFINITION!
-  addExpense: (expense: Expense) => Promise<void>;
+  updateSale: (sale: Sale) => Promise<void>;
+  addExpense: (expense: Expense) => Promise<void>; // <-- Fixed from any
   updateCustomer: (customer: Customer) => Promise<void>;
+
+  // ... (leave the rest of your bulkUpdate and Firebase functions exactly the same)
+  // --- NEW: MASS OPERATIONS & MULTI-BRANCH ENGINE ---
+  bulkUpdateProducts: (updatedProducts: Product[]) => Promise<void>;
+  bulkDeleteProducts: (productIds: string[]) => Promise<void>;
+  transferStock: (productId: string, variantId: string, qty: number, targetBranchId: string) => Promise<void>;
   
   factoryReset: () => void;
 }
@@ -64,6 +70,103 @@ export const useDataStore = create<DataState>()(
         await setDoc(docRef, product, { merge: true });
       },
 
+      // --- ADVANCED BULK UPDATER (Handles the 490 chunk limit) ---
+      bulkUpdateProducts: async (updatedProducts) => {
+        const { profile, products } = get();
+        if (!profile) return;
+
+        // 1. Instant Optimistic UI Update
+        const updatedMap = new Map(updatedProducts.map(p => [p.id, p]));
+        set({ products: products.map(p => updatedMap.has(p.id) ? updatedMap.get(p.id)! : p) });
+
+        // 2. Chunked Firebase Batches
+        let batch = writeBatch(db);
+        let count = 0;
+        for (const prod of updatedProducts) {
+          const docRef = doc(db, 'merchants', profile.merchantId, 'products', prod.id);
+          batch.set(docRef, prod, { merge: true });
+          count++;
+          if (count >= 490) {
+            await batch.commit();
+            batch = writeBatch(db);
+            count = 0;
+          }
+        }
+        if (count > 0) await batch.commit();
+      },
+
+      // --- ADVANCED BULK DELETER ---
+      bulkDeleteProducts: async (productIds) => {
+        const { profile, products } = get();
+        if (!profile) return;
+
+        const idsSet = new Set(productIds);
+        set({ products: products.filter(p => !idsSet.has(p.id)) });
+
+        let batch = writeBatch(db);
+        let count = 0;
+        for (const id of productIds) {
+          const docRef = doc(db, 'merchants', profile.merchantId, 'products', id);
+          batch.delete(docRef);
+          count++;
+          if (count >= 490) {
+            await batch.commit();
+            batch = writeBatch(db);
+            count = 0;
+          }
+        }
+        if (count > 0) await batch.commit();
+      },
+
+      // --- MULTI-BRANCH STOCK TRANSFER ENGINE ---
+      transferStock: async (productId, variantId, qty, targetBranchId) => {
+        const { profile, products } = get();
+        if (!profile) return;
+
+        // 1. Deduct locally instantly
+        const pIndex = products.findIndex(p => p.id === productId);
+        if (pIndex === -1) throw new Error("Product not found");
+
+        const clonedProducts = [...products];
+        const prod = { ...clonedProducts[pIndex] };
+        const vIndex = prod.variants.findIndex(v => v.id === variantId);
+        if (vIndex === -1) throw new Error("Variant not found");
+        
+        const variant = { ...prod.variants[vIndex] };
+        if (variant.stock < qty) throw new Error("Not enough stock");
+        
+        variant.stock -= qty;
+        prod.variants[vIndex] = variant;
+        clonedProducts[pIndex] = prod;
+
+        set({ products: clonedProducts });
+
+        // 2. Update Source Firebase branch
+        const localRef = doc(db, 'merchants', profile.merchantId, 'products', productId);
+        await setDoc(localRef, prod, { merge: true });
+
+        // 3. Increment in Target Firebase branch
+        const targetRef = doc(db, 'merchants', targetBranchId, 'products', productId);
+        const targetSnap = await getDoc(targetRef);
+
+        if (targetSnap.exists()) {
+          const targetProd = targetSnap.data() as Product;
+          const targetVarIndex = targetProd.variants.findIndex(v => v.id === variantId);
+          
+          if (targetVarIndex !== -1) {
+            targetProd.variants[targetVarIndex].stock += qty;
+          } else {
+            const newVar = { ...variant, stock: qty };
+            targetProd.variants.push(newVar);
+          }
+          await setDoc(targetRef, targetProd, { merge: true });
+        } else {
+          // Send entirely new product structure to target branch with zeroed-out other variants
+          const newProd = { ...prod, variants: prod.variants.map(v => v.id === variantId ? { ...v, stock: qty } : { ...v, stock: 0 }) };
+          await setDoc(targetRef, newProd);
+        }
+      },
+
       addSale: async (sale) => {
         const { profile, sales } = get();
         if (!profile) return;
@@ -72,7 +175,6 @@ export const useDataStore = create<DataState>()(
         await setDoc(docRef, sale, { merge: true });
       },
 
-      // --- THE NEW UDHAAR RESOLVER ---
       updateSale: async (sale) => {
         const { profile, sales } = get();
         if (!profile) return;
@@ -106,8 +208,7 @@ export const useDataStore = create<DataState>()(
     }),
     {
       name: 'bharatpos-session',
-      // ONLY save the login session to local storage. Firebase handles the rest!
-      partialize: (state) => ({ profile: state.profile }),
+      partialize: (state) => ({ profile: state.profile }), // Only persist session
     }
   )
 );

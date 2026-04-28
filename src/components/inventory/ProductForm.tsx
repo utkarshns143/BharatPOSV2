@@ -1,247 +1,519 @@
-import React, { useState, useEffect } from 'react';
-import { Button } from '../ui/Button';
-import { Card } from '../ui/Card';
+// File: src/components/inventory/ProductForm.tsx
+
+import React, { useState, useRef,  } from 'react';
+import { useDataStore } from '../../store/useDataStore';
 import type { Product, ProductVariant } from '../../types';
 
-interface ProductFormProps {
-  initialData?: Product | null;
-  onSave: (product: Omit<Product, 'id'> | Product) => void;
-  onCancel?: () => void;
+// Let TypeScript know Quagga might be loaded globally via index.html
+declare const Quagga: any;
+
+// Local interface for managing the deeply nested hierarchical UI state
+interface FormBrand {
+  id: string;
+  brandName: string;
+  baseQty: number;
+  baseUnit: string;
+  price: number | '';
+  stock: number | '';
+  barcode: string;
+  costPrice: number | '';
+  expiryDate: string;
 }
 
-export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onSave, onCancel }) => {
-  const [cfgAdvFields, setCfgAdvFields] = useState(false);
-  const [cfgLoose, setCfgLoose] = useState(false);
-  const [cfgBatch, setCfgBatch] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+interface FormType {
+  id: string;
+  typeName: string;
+  brands: FormBrand[];
+}
 
-  // Form State
+export const ProductForm: React.FC = () => {
+  const addProduct = useDataStore((state) => state.addProduct);
+  
+  // --- FORM STATE ---
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
-  const [subCategory, setSubCategory] = useState(''); // NEW: Advanced Categorization
-  const [reorderPoint, setReorderPoint] = useState<number>(5);
-  const [batchId, setBatchId] = useState('');
-  
-  const [showGst, setShowGst] = useState(false);
   const [hsn, setHsn] = useState('');
   const [gstRate, setGstRate] = useState<number | ''>('');
   const [priceType, setPriceType] = useState<'inclusive' | 'exclusive'>('inclusive');
+  const [isLoose, setIsLoose] = useState(false);
+  const [batchId, setBatchId] = useState('');
+  const [reorderPoint, setReorderPoint] = useState<number | ''>('');
 
-  const [variants, setVariants] = useState<Omit<ProductVariant, 'id'>[]>([
-    { quantity: '', price: 0, stock: 0 }
-  ]);
+  // Hierarchical Variant State (Type -> Brands)
+  const [types, setTypes] = useState<FormType[]>([{
+    id: `type_${Date.now()}`,
+    typeName: '',
+    brands: [{ id: `brand_${Date.now()}`, brandName: '', baseQty: 1, baseUnit: 'pcs', price: '', stock: '', barcode: '', costPrice: '', expiryDate: '' }]
+  }]);
 
-  useEffect(() => {
-    if (initialData) {
-      setName(initialData.name);
+  // --- UI TOGGLE STATE ---
+  const [showAdvFields, setShowAdvFields] = useState(localStorage.getItem('cfg_adv_fields') === 'true');
+  const [showBatch,] = useState(localStorage.getItem('cfg_batch') === 'true');
+  const [showGst, setShowGst] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // --- AI LENS & CAMERA STATE ---
+  const [isAIScanning, setIsAIScanning] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+
+  // --- QUAGGA BARCODE STATE ---
+  const [isBarcodeScanning, setIsBarcodeScanning] = useState(false);
+  const [, setActiveBarcodeTarget] = useState<{ typeId: string, brandId: string } | null>(null);
+
+  // ════════════════════════════════════════════════════════════
+  // 1. VARIANT ENGINE LOGIC
+  // ════════════════════════════════════════════════════════════
+  const handleAddType = () => {
+    setTypes([...types, {
+      id: `type_${Date.now()}`, typeName: '',
+      brands: [{ id: `brand_${Date.now()}`, brandName: '', baseQty: 1, baseUnit: 'pcs', price: '', stock: '', barcode: '', costPrice: '', expiryDate: '' }]
+    }]);
+  };
+
+  const handleRemoveType = (typeId: string) => {
+    setTypes(types.filter(t => t.id !== typeId));
+  };
+
+  const handleAddBrand = (typeId: string) => {
+    setTypes(types.map(t => {
+      if (t.id === typeId) {
+        return { ...t, brands: [...t.brands, { id: `brand_${Date.now()}`, brandName: '', baseQty: 1, baseUnit: 'pcs', price: '', stock: '', barcode: '', costPrice: '', expiryDate: '' }] };
+      }
+      return t;
+    }));
+  };
+
+  const handleRemoveBrand = (typeId: string, brandId: string) => {
+    setTypes(types.map(t => {
+      if (t.id === typeId) return { ...t, brands: t.brands.filter(b => b.id !== brandId) };
+      return t;
+    }));
+  };
+
+  const updateBrand = (typeId: string, brandId: string, field: keyof FormBrand, value: any) => {
+    setTypes(types.map(t => {
+      if (t.id === typeId) {
+        return { ...t, brands: t.brands.map(b => b.id === brandId ? { ...b, [field]: value } : b) };
+      }
+      return t;
+    }));
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // 2. AI LENS ENGINE
+  // ════════════════════════════════════════════════════════════
+  const startAIScan = async () => {
+    setIsAIScanning(true);
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      setStream(mediaStream);
+      if (videoRef.current) videoRef.current.srcObject = mediaStream;
       
-      // Split category if it has a sub-category (e.g., "Grocery > Dal")
-      if (initialData.category.includes(' > ')) {
-        const parts = initialData.category.split(' > ');
-        setCategory(parts[0]);
-        setSubCategory(parts[1]);
+      // Auto-capture after 3 seconds
+      setTimeout(captureAndSendToAI, 3000);
+    } catch (err) {
+      alert("Camera access denied");
+      setIsAIScanning(false);
+    }
+  };
+
+  const stopAIScan = () => {
+    if (stream) { stream.getTracks().forEach(t => t.stop()); setStream(null); }
+    setIsAIScanning(false);
+  };
+
+  const captureAndSendToAI = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const base64 = canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
+
+    stopAIScan();
+    alert("✨ AI Lens analyzing..."); // Replace with proper UI toast later
+
+    try {
+      const res = await fetch('https://server-xy7s.onrender.com/ai-product-scan', {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageBase64: base64 })
+      });
+      const data = await res.json();
+
+      if (data && data.success && data.product) {
+        const p = data.product;
+        
+        if (p.name) setName(p.name);
+        if (p.category) setCategory(p.category);
+        if (p.hsn_code) setHsn(p.hsn_code);
+        if (p.gst_rate !== null) { setGstRate(p.gst_rate); setShowGst(true); }
+
+        setTypes(prev => {
+          const newTypes = [...prev];
+          if (newTypes.length > 0) {
+            if (p.quantity_unit) newTypes[0].typeName = p.quantity_unit;
+            if (newTypes[0].brands.length > 0) {
+              const brand = newTypes[0].brands[0];
+              if (p.price !== null) brand.price = p.price;
+              if (p.brand) brand.brandName = p.brand;
+              if (p.barcode) brand.barcode = p.barcode;
+              if (p.expiry_date) brand.expiryDate = p.expiry_date;
+              
+              if (p.barcode || p.expiry_date) setShowAdvFields(true);
+            }
+          }
+          return newTypes;
+        });
+      }
+    } catch (e) {
+      alert("AI Lens failed to recognize product");
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // 3. BARCODE ENGINE
+  // ════════════════════════════════════════════════════════════
+  const startBarcodeScan = (typeId: string, brandId: string) => {
+    setActiveBarcodeTarget({ typeId, brandId });
+    setIsBarcodeScanning(true);
+    
+    setTimeout(() => {
+      if (typeof Quagga !== 'undefined') {
+        Quagga.init({
+          inputStream: { name: "Live", type: "LiveStream", target: document.querySelector('#quaggaPreview'), constraints: { facingMode: "environment" } },
+          decoder: { readers: ["ean_reader", "upc_reader", "code_128_reader"] }
+        }, (err: any) => {
+          if (err) { alert("Scanner failed"); return; }
+          Quagga.start();
+        });
+
+        Quagga.onDetected((result: any) => {
+          if (result.codeResult.code) {
+            const code = result.codeResult.code;
+            updateBrand(typeId, brandId, 'barcode', code);
+            stopBarcodeScan();
+            // Optional: Play beep sound here
+          }
+        });
       } else {
-        setCategory(initialData.category);
+        alert("Quagga library not loaded.");
       }
-      
-      setVariants(initialData.variants);
-      setCfgLoose(initialData.isLoose || false);
-      setReorderPoint(initialData.reorderPoint || 5);
-      setHsn(initialData.hsn || '');
-      setGstRate(initialData.gstRate || '');
-      setPriceType(initialData.priceType || 'inclusive');
-      setBatchId(initialData.batchId || '');
-      
-      if (initialData.hsn || initialData.gstRate) setShowGst(true);
-      if (initialData.batchId || initialData.reorderPoint !== 5) {
-        setShowSettings(true);
-        setCfgAdvFields(true);
-      }
-    }
-  }, [initialData]);
-
-  const handleVariantChange = (index: number, field: keyof ProductVariant, value: string | number) => {
-    const newVariants = [...variants];
-    newVariants[index] = { ...newVariants[index], [field]: value };
-    setVariants(newVariants);
+    }, 100);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const stopBarcodeScan = () => {
+    if (typeof Quagga !== 'undefined') Quagga.stop();
+    setIsBarcodeScanning(false);
+   
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // 4. SUBMISSION
+  // ════════════════════════════════════════════════════════════
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || variants.some(v => !v.quantity || v.price <= 0)) {
-      alert("Please fill in the product name and ensure all variants have a name/quantity and price.");
-      return;
+    setIsSaving(true);
+
+    try {
+      const nowIso = new Date().toISOString();
+      const productId = `prod_${Date.now()}`;
+      
+      const flattenedVariants: ProductVariant[] = [];
+      
+      types.forEach((t, i) => {
+        t.brands.forEach((b, j) => {
+          const typeVal = t.typeName.trim() || 'Standard';
+          const bName = b.brandName.trim();
+          const finalQuantity = bName ? `${typeVal} - ${bName}` : typeVal;
+          
+          let dbPrice = Number(b.price) || 0;
+          if (isLoose) dbPrice = dbPrice * (Number(b.baseQty) || 1);
+
+          flattenedVariants.push({
+            id: `var_${Date.now()}_${i}_${j}`,
+            type: typeVal,
+            brandName: bName,
+            quantity: finalQuantity,
+            price: dbPrice,
+            stock: Number(b.stock) || 0,
+            baseQty: Number(b.baseQty) || 1,
+            baseUnit: b.baseUnit.trim() || 'pcs',
+            barcode: b.barcode.trim(),
+            costPrice: Number(b.costPrice) || '',
+            expiryDate: b.expiryDate,
+            dateAdded: nowIso
+          });
+        });
+      });
+
+      const newProduct: Product = {
+        id: productId,
+        name: name.trim(),
+        category: category.trim() || 'General',
+        hsn: hsn.trim(),
+        gstRate: gstRate === '' ? '' : Number(gstRate),
+        priceType: priceType,
+        isLoose: isLoose,
+        batchId: batchId.trim(),
+        reorderPoint: reorderPoint === '' ? '' : Number(reorderPoint),
+        dateAdded: nowIso,
+        variants: flattenedVariants
+      };
+
+      await addProduct(newProduct);
+
+      // Reset Form
+      setName(''); setCategory(''); setHsn(''); setGstRate(''); setBatchId(''); setReorderPoint('');
+      setTypes([{ id: `type_${Date.now()}`, typeName: '', brands: [{ id: `brand_${Date.now()}`, brandName: '', baseQty: 1, baseUnit: 'pcs', price: '', stock: '', barcode: '', costPrice: '', expiryDate: '' }] }]);
+      
+      alert("✅ Item Saved Successfully");
+
+    } catch (err) {
+      console.error(err);
+      alert("Critical error saving data");
+    } finally {
+      setIsSaving(false);
     }
-
-    const finalCategory = subCategory ? `${category.trim()} > ${subCategory.trim()}` : category.trim() || 'Uncategorized';
-
-    onSave({
-      ...(initialData ? { id: initialData.id } : {}),
-      name,
-      category: finalCategory,
-      variants: variants as ProductVariant[],
-      isLoose: cfgLoose,
-      reorderPoint,
-      hsn,
-      gstRate: gstRate ? Number(gstRate) : undefined,
-      priceType,
-      batchId
-    } as Product | Omit<Product, 'id'>);
   };
 
-  const inputStyle = { width: '100%', boxSizing: 'border-box' as const, padding: '0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', outline: 'none' };
-
+  // ════════════════════════════════════════════════════════════
+  // RENDER (Exact mapping to your HTML Structure)
+  // ════════════════════════════════════════════════════════════
   return (
-    <form onSubmit={handleSubmit} style={{ width: '100%', boxSizing: 'border-box' }}>
-      <Card padding="1.5rem" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', boxSizing: 'border-box' }}>
-        
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-          <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.2rem' }}>
-            <span style={{ backgroundColor: '#eff6ff', color: 'var(--primary)', padding: '0.5rem', borderRadius: '8px' }}>📦</span>
-            {initialData ? 'Edit Product' : 'Product Engine'}
-          </h2>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <Button type="button" variant="outline" onClick={() => setShowSettings(!showSettings)} style={{ padding: '0.5rem 0.75rem' }}>
-              ⚙️ Config
-            </Button>
-          </div>
-        </div>
-
-        {showSettings && (
-          <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}>
-                Enable Sell By Weight (Fractional Qty)
-                <input type="checkbox" checked={cfgLoose} onChange={e => setCfgLoose(e.target.checked)} style={{ width: '20px', height: '20px', accentColor: 'var(--primary)' }}/>
-              </label>
-              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}>
-                Enable Advanced Fields (Alerts)
-                <input type="checkbox" checked={cfgAdvFields} onChange={e => setCfgAdvFields(e.target.checked)} style={{ width: '20px', height: '20px', accentColor: 'var(--primary)' }}/>
-              </label>
-              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}>
-                Enable Batch System (Lot No.)
-                <input type="checkbox" checked={cfgBatch} onChange={e => setCfgBatch(e.target.checked)} style={{ width: '20px', height: '20px', accentColor: 'var(--primary)' }}/>
-              </label>
-            </div>
-          </div>
-        )}
-        
-        {/* Core Inputs */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-          <div style={{ flex: '1 1 100%', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <label style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Product Name *</label>
-            <input type="text" value={name} onChange={e => setName(e.target.value)} required style={inputStyle} placeholder="e.g. Aashirvaad Atta" />
-          </div>
-          <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <label style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Main Category</label>
-            <input type="text" value={category} onChange={e => setCategory(e.target.value)} style={inputStyle} list="catList" placeholder="e.g. Grocery" />
-            <datalist id="catList"><option value="Grocery"/><option value="Dairy"/><option value="Snacks"/></datalist>
-          </div>
-          <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <label style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Sub-Category (Optional)</label>
-            <input type="text" value={subCategory} onChange={e => setSubCategory(e.target.value)} style={inputStyle} placeholder="e.g. Flours & Grains" />
-          </div>
-        </div>
-
-        {/* Variant Engine */}
-        <div style={{ backgroundColor: cfgLoose ? '#fdf4ff' : '#f9f9f9', padding: '1rem', borderRadius: 'var(--radius)', border: cfgLoose ? '1px solid #e879f9' : '1px solid var(--border)', boxSizing: 'border-box' }}>
-          
-          {cfgLoose && (
-            <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#fae8ff', color: '#86198f', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
-              ⚖️ <b>Sell By Weight Mode:</b> Define your "Base Unit" (e.g. 1 Kg). Enter the price per Base Unit. Enter total stock in Base Units.
-            </div>
-          )}
-
-          {variants.map((variant, index) => (
-            <div key={index} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end', marginBottom: '1rem', backgroundColor: 'white', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', boxSizing: 'border-box' }}>
-              <div style={{ flex: '1 1 120px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: cfgLoose ? '#a21caf' : 'var(--text-muted)' }}>
-                  {cfgLoose ? 'Base Unit (e.g. 1 Kg)' : 'Size / Pack Type'}
-                </label>
-                <input type="text" value={variant.quantity} onChange={e => handleVariantChange(index, 'quantity', e.target.value)} required style={inputStyle} placeholder={cfgLoose ? "1 Kg" : "500g Pack"} />
-              </div>
-              <div style={{ flex: '1 1 100px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--success)' }}>
-                  {cfgLoose ? 'Price per Base Unit (₹)' : 'Price (₹)'}
-                </label>
-                <input type="number" value={variant.price || ''} onChange={e => handleVariantChange(index, 'price', Number(e.target.value))} required min="0" style={inputStyle} />
-              </div>
-              <div style={{ flex: '1 1 80px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>
-                  {cfgLoose ? 'Total Stock (Base Units)' : 'Stock Count'}
-                </label>
-                <input type="number" value={variant.stock || ''} onChange={e => handleVariantChange(index, 'stock', Number(e.target.value))} required min="0" step={cfgLoose ? "0.01" : "1"} style={inputStyle} />
-              </div>
-              {variants.length > 1 && (
-                <button type="button" onClick={() => setVariants(variants.filter((_, i) => i !== index))} style={{ padding: '0.75rem', backgroundColor: 'var(--danger)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', height: '42px', flex: '0 0 auto' }}>✕</button>
-              )}
-            </div>
-          ))}
-          {!cfgLoose && (
-            <Button type="button" variant="outline" onClick={() => setVariants([...variants, { quantity: '', price: 0, stock: 0 }])} style={{ width: '100%', borderStyle: 'dashed', color: 'var(--primary)' }}>
-              ➕ Add Size / Variant
-            </Button>
-          )}
-        </div>
-
-        {/* GST Configuration */}
-        <div style={{ width: '100%' }}>
-          <button type="button" onClick={() => setShowGst(!showGst)} style={{ width: '100%', backgroundColor: '#fffbeb', border: '1px solid var(--border)', padding: '1rem', borderRadius: 'var(--radius)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold', cursor: 'pointer', boxSizing: 'border-box' }}>
-            <span style={{ color: 'var(--warning)' }}>🧾 Level 2 — GST Config</span>
-            <span>{showGst ? '▲' : '▼'}</span>
+    <div className="panel">
+      <div className="panel-header">
+        <h2 className="panel-title">
+          <div className="panel-title-icon blue"><i className="fa-solid fa-layer-group"></i></div>
+          <span>Product Engine</span>
+        </h2>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button id="btnStartScan" type="button" className="btn btn-scan btn-icon-only" onClick={startAIScan}>
+            <i className="fa-solid fa-camera-viewfinder"></i> <span style={{ fontSize: '12px' }}>Lens</span>
           </button>
-          
-          {showGst && (
-            <div style={{ padding: '1rem', border: '1px solid var(--border)', borderTop: 'none', borderRadius: '0 0 var(--radius) var(--radius)', backgroundColor: 'white', display: 'flex', flexWrap: 'wrap', gap: '1rem', boxSizing: 'border-box' }}>
-              <div style={{ flex: '1 1 100px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>HSN Code</label>
-                <input type="text" value={hsn} onChange={e => setHsn(e.target.value)} style={inputStyle} />
-              </div>
-              <div style={{ flex: '1 1 80px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>GST %</label>
-                <input type="number" value={gstRate} onChange={e => setGstRate(e.target.value ? Number(e.target.value) : '')} style={inputStyle} />
-              </div>
-              <div style={{ flex: '1 1 150px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--primary)' }}>Tax Calc</label>
-                <select value={priceType} onChange={e => setPriceType(e.target.value as any)} style={inputStyle}>
-                  <option value="inclusive">Inclusive</option>
-                  <option value="exclusive">Exclusive</option>
-                </select>
-              </div>
-            </div>
-          )}
+          <button id="btnOpenSettings" type="button" className="btn btn-outline btn-icon-only" onClick={() => {
+            setShowAdvFields(!showAdvFields);
+            localStorage.setItem('cfg_adv_fields', (!showAdvFields).toString());
+          }}>
+            <i className="fa-solid fa-gear"></i>
+          </button>
+        </div>
+      </div>
+
+      {/* AI LENS SCANNER */}
+      <div className="scanner-box" id="scannerBox" style={{ display: isAIScanning ? 'block' : 'none' }}>
+        <div className="scan-laser"></div>
+        <video id="cameraPreview" ref={videoRef} autoPlay playsInline></video>
+        <canvas id="captureCanvas" ref={canvasRef} style={{ display: 'none' }}></canvas>
+        <div style={{ position: 'absolute', bottom: '10px', width: '100%', textAlign: 'center' }}>
+          <button id="btnStopScan" type="button" className="btn" onClick={stopAIScan} style={{ width: 'auto', display: 'inline-flex', padding: '7px 18px', fontSize: '12px', background: 'rgba(220,38,38,0.9)', color: 'white', borderRadius: '8px', border: 'none' }}>
+            <i className="fa-solid fa-xmark"></i> Stop Lens
+          </button>
+        </div>
+      </div>
+
+      <form id="productForm" onSubmit={handleSaveProduct}>
+        <div className="form-group">
+          <input type="text" id="pName" className="form-input" placeholder=" " value={name} onChange={e => setName(e.target.value)} required autoComplete="off" />
+          <label className="floating-label">Product Name</label>
         </div>
 
-        {/* Conditional Advanced Fields */}
-        {(cfgAdvFields || cfgBatch) && (
-          <div style={{ borderTop: '1.5px dashed var(--border)', paddingTop: '1rem', display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-            {cfgBatch && (
-              <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>Batch ID (Lot No.)</label>
-                <input type="text" value={batchId} onChange={e => setBatchId(e.target.value)} style={inputStyle} />
+        {/* VARIANT ENGINE */}
+        <div id="variantEngineWrapper">
+          <div id="variantEngine">
+            {types.map((t, i) => (
+              <div key={t.id} className={`type-box ${showAdvFields ? 'show-adv' : ''}`}>
+                {types.length > 1 && (
+                  <button type="button" className="btn-remove-type" onClick={() => handleRemoveType(t.id)}>
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
+                )}
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <div className="form-group" style={{ flex: 2, marginBottom: 0 }}>
+                    <input type="text" className="form-input v-type-input" placeholder=" " value={t.typeName} onChange={e => {
+                      const newTypes = [...types]; newTypes[i].typeName = e.target.value; setTypes(newTypes);
+                    }} required />
+                    <label className="floating-label">Type of Item (e.g. Biscuit)</label>
+                  </div>
+                  <button type="button" className="btn btn-dashed btn-add-brand" onClick={() => handleAddBrand(t.id)} style={{ flex: 1, marginBottom: 0, height: '46px', fontSize: '13px' }}>
+                    + Add Brand
+                  </button>
+                </div>
+
+                <div className="brands-container">
+                  {t.brands.map((b,) => {
+                    const showBrandInput = t.brands.length > 1 || b.brandName !== '';
+                    return (
+                      <div key={b.id} className="brand-box" style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1.5px dashed var(--border)', position: 'relative' }}>
+                        
+                        <div className="form-group brand-name-group" style={{ display: showBrandInput ? 'block' : 'none' }}>
+                          <input type="text" className="form-input b-name" placeholder=" " value={b.brandName} onChange={e => updateBrand(t.id, b.id, 'brandName', e.target.value)} />
+                          <label className="floating-label">Brand Name</label>
+                        </div>
+
+                        <div className="variant-grid">
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <input type="number" step="0.001" className="form-input b-base-qty" placeholder="Qty" value={b.baseQty} onChange={e => updateBrand(t.id, b.id, 'baseQty', Number(e.target.value))} style={{ flex: 1 }} />
+                              <input type="text" className="form-input b-base-unit" placeholder="Unit" value={b.baseUnit} onChange={e => updateBrand(t.id, b.id, 'baseUnit', e.target.value)} style={{ width: '80px' }} />
+                            </div>
+                            <label className="floating-label" style={{ top: '-8px', background: '#fff', fontSize: '11px', color: 'var(--primary)' }}>
+                              <i className="fa-solid fa-box"></i> 1 Stock Contains
+                            </label>
+                          </div>
+
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <input type="number" step="0.01" className="form-input b-price" placeholder=" " value={b.price} onChange={e => updateBrand(t.id, b.id, 'price', e.target.value ? Number(e.target.value) : '')} required style={{ fontSize: '16px', fontWeight: 800, color: 'var(--success)', fontFamily: "'JetBrains Mono', monospace" }} />
+                            <label className="floating-label b-price-label">{isLoose ? `Amount per 1 ${b.baseUnit}` : `Amount per ${b.baseQty} ${b.baseUnit}`}</label>
+                          </div>
+                        </div>
+
+                        <div className="form-group" style={{ marginTop: '12px', marginBottom: 0 }}>
+                          <input type="number" step="0.001" className="form-input b-stock" placeholder=" " value={b.stock} onChange={e => updateBrand(t.id, b.id, 'stock', e.target.value ? Number(e.target.value) : '')} required />
+                          <label className="floating-label" style={{ color: 'var(--primary)', fontWeight: 700 }}>Stock</label>
+                        </div>
+
+                        {/* ADVANCED FIELDS */}
+                        <div className="adv-only-field">
+                          <div className="variant-grid">
+                            <div className="form-group" style={{ marginBottom: 0, position: 'relative' }}>
+                              <input type="text" className="form-input b-barcode" placeholder=" " value={b.barcode} onChange={e => updateBrand(t.id, b.id, 'barcode', e.target.value)} />
+                              <button type="button" className="btn-scan-barcode" onClick={() => startBarcodeScan(t.id, b.id)} style={{ position: 'absolute', right: '8px', top: '11px', background: 'none', border: 'none', color: 'var(--primary)', fontSize: '16px', cursor: 'pointer' }}>
+                                <i className="fa-solid fa-barcode"></i>
+                              </button>
+                              <label className="floating-label"><i className="fa-solid fa-barcode"></i> Barcode</label>
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <input type="number" step="0.01" className="form-input b-cost" placeholder=" " value={b.costPrice} onChange={e => updateBrand(t.id, b.id, 'costPrice', e.target.value ? Number(e.target.value) : '')} />
+                              <label className="floating-label"><i className="fa-solid fa-tags"></i> Cost Price</label>
+                            </div>
+                          </div>
+                          <div className="form-group" style={{ marginTop: '12px', marginBottom: 0 }}>
+                            <input type="date" className="form-input b-expiry" placeholder=" " value={b.expiryDate} onChange={e => updateBrand(t.id, b.id, 'expiryDate', e.target.value)} />
+                            <label className="floating-label"><i className="fa-regular fa-calendar-xmark"></i> Expiry Date</label>
+                          </div>
+                        </div>
+
+                        {t.brands.length > 1 && (
+                          <button type="button" className="btn-remove-brand" onClick={() => handleRemoveBrand(t.id, b.id)} style={{ position: 'absolute', top: '16px', right: 0, background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '16px', padding: '5px' }}>
+                            <i className="fa-solid fa-trash"></i>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            )}
-            {cfgAdvFields && (
-              <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>Min. Stock Alert Threshold</label>
-                <input type="number" value={reorderPoint} onChange={e => setReorderPoint(Number(e.target.value))} style={inputStyle} />
+            ))}
+          </div>
+        </div>
+
+        <button id="btnAddVariant" type="button" className="btn btn-dashed" onClick={handleAddType} style={{ marginBottom: '18px', fontSize: '13px' }}>
+          <i className="fa-solid fa-plus"></i> Add Another Type
+        </button>
+
+        <div className="form-group">
+          <input type="text" id="pCategory" className="form-input" placeholder=" " value={category} onChange={e => setCategory(e.target.value)} autoComplete="off" />
+          <label className="floating-label">Category</label>
+        </div>
+
+        <button type="button" className="tier-toggle" id="btnToggleGst" onClick={() => setShowGst(!showGst)} style={{ background: showGst ? 'var(--blue-50)' : '', borderColor: showGst ? 'var(--primary)' : '', color: showGst ? 'var(--primary)' : '' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'var(--warning-soft)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <i className="fa-solid fa-receipt" style={{ color: 'var(--warning)', fontSize: '12px' }}></i>
+            </span>
+            Level 2 — GST Config
+          </span>
+          <i className="fa-solid fa-chevron-down chevron" style={{ color: 'var(--slate-400)', fontSize: '14px', transform: showGst ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}></i>
+        </button>
+
+        {showGst && (
+          <div id="tierGst" className="tier-content" style={{ display: 'block' }}>
+            <div className="variant-grid">
+              <div className="form-group">
+                <input type="text" id="pHSN" className="form-input" placeholder=" " value={hsn} onChange={e => setHsn(e.target.value)} />
+                <label className="floating-label">HSN Code</label>
               </div>
-            )}
+              <div className="form-group">
+                <input type="number" id="pGSTRate" className="form-input" placeholder=" " value={gstRate} onChange={e => setGstRate(e.target.value ? Number(e.target.value) : '')} />
+                <label className="floating-label">GST %</label>
+              </div>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <select id="pPriceType" className="form-select" value={priceType} onChange={e => setPriceType(e.target.value as any)}>
+                <option value="inclusive">Inclusive (Rate includes Tax)</option>
+                <option value="exclusive">Exclusive (Tax added on top)</option>
+              </select>
+              <label className="floating-label" style={{ background: '#fff', top: '-8px', fontSize: '11px', color: 'var(--primary)' }}>Tax Calculation</label>
+            </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-          {onCancel && (
-            <Button type="button" variant="outline" onClick={onCancel} style={{ flex: 1, padding: '1rem', boxSizing: 'border-box' }}>
-              Cancel
-            </Button>
-          )}
-          <Button type="submit" variant="primary" style={{ flex: 2, padding: '1rem', fontSize: '1.1rem', boxSizing: 'border-box' }}>
-            {initialData ? 'Update Product' : 'Save to Database'}
-          </Button>
-        </div>
+        {/* ADVANCED GLOBAL DETAILS */}
+        {(showAdvFields || showBatch) && (
+          <div id="advancedFieldsContainer" style={{ paddingTop: '15px', marginTop: '10px', borderTop: '1.5px dashed var(--border)' }}>
+            <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--primary)', marginBottom: '12px', textTransform: 'uppercase' }}>
+              Advanced Global Details
+            </div>
+            
+            <div className="form-group" id="looseInputContainer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f9f9f9', padding: '12px 16px', borderRadius: '12px', marginBottom: '16px', border: '1.5px solid var(--border)' }}>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>Sell By Weight / Loose</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Check this if you sell fractional amounts (e.g. 1.5kg)</div>
+              </div>
+              <label className="switch">
+                <input type="checkbox" id="pIsLoose" checked={isLoose} onChange={e => setIsLoose(e.target.checked)} />
+                <span className="slider"></span>
+              </label>
+            </div>
 
-      </Card>
-    </form>
+            {showBatch && (
+              <div className="form-group" id="batchInputContainer">
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <input type="text" id="pBatchId" className="form-input" placeholder=" " value={batchId} onChange={e => setBatchId(e.target.value)} />
+                    <label className="floating-label"><i className="fa-solid fa-layer-group" style={{ marginRight: '4px' }}></i> Batch ID (Lot No.)</label>
+                  </div>
+                  <button type="button" id="btnAutoBatch" className="btn btn-outline" onClick={() => setBatchId(`${category.substring(0,3).toUpperCase() || 'BAT'}-${Math.floor(1000 + Math.random() * 9000)}`)} style={{ width: 'auto', padding: '0 15px' }}>Auto</button>
+                </div>
+              </div>
+            )}
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <input type="number" id="pReorderPoint" className="form-input" placeholder=" " value={reorderPoint} onChange={e => setReorderPoint(e.target.value ? Number(e.target.value) : '')} />
+              <label className="floating-label"><i className="fa-solid fa-bell-concierge" style={{ marginRight: '4px' }}></i> Min. Stock Alert Threshold</label>
+            </div>
+          </div>
+        )}
+
+        <button type="submit" className="btn btn-primary" style={{ marginTop: '20px', fontSize: '15px' }} id="saveBtn" disabled={isSaving}>
+          {isSaving ? <><i className="fa-solid fa-spinner fa-spin"></i> Saving...</> : <><i className="fa-solid fa-cloud-arrow-up"></i> Save to Database</>}
+        </button>
+      </form>
+
+      {/* QUAGGA BARCODE MODAL */}
+      {isBarcodeScanning && (
+        <div id="barcodeScannerModal" className="modal-overlay" style={{ display: 'flex' }}>
+          <div className="modal-box" style={{ borderRadius: '16px', padding: '20px', width: '90%', maxWidth: '400px', textAlign: 'center', background: '#0F172A', color: 'white' }}>
+            <h4 style={{ marginTop: 0, marginBottom: '15px', fontFamily: 'var(--font-head)', fontSize: '16px' }}>
+              <i className="fa-solid fa-barcode" style={{ color: '#60A5FA' }}></i> Scan Barcode
+            </h4>
+            <div id="quaggaPreview" style={{ width: '100%', height: '250px', background: '#000', borderRadius: '12px', overflow: 'hidden', position: 'relative', border: '2px solid var(--primary)' }}>
+              <div className="scan-laser"></div>
+            </div>
+            <button type="button" className="btn" style={{ marginTop: '20px', width: '100%', background: 'rgba(255,255,255,0.1)', color: 'white' }} onClick={stopBarcodeScan}>
+              <i className="fa-solid fa-xmark"></i> Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
+
+export default ProductForm;

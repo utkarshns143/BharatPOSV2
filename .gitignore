@@ -1,3 +1,4 @@
 # Secure environment variables
 .env
 node_modules 
+repomix-output.xml
