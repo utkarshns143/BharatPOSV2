@@ -84,7 +84,14 @@ export const Login: React.FC = () => {
         await setDoc(merchantRef, newProfile);
         
         // Save to local Zustand store
-        setProfile(newProfile);
+        // Change "phone" to "mobile" and add "isBranch"
+setProfile({
+  merchantId: "your-id-variable", // keep whatever variable was here
+  shopName: "your-shop-variable", // keep whatever variable was here
+  mobile: phone,                  // Changed from phone: phone
+  category: category,             // keep whatever variable was here
+  isBranch: false                 // Added this!
+});
         
         // Update UI
         setGeneratedId(newId);

@@ -68,7 +68,7 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ isOpen
                   <div style={{ fontWeight: 'bold' }}>{v.quantity}</div>
                   <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                     <span style={{ color: 'var(--success)', fontWeight: 'bold', fontFamily: 'monospace' }}>{formatCurrency(v.price)}</span>
-                    <span style={{ backgroundColor: v.stock <= product.reorderPoint ? '#fee2e2' : '#f1f5f9', color: v.stock <= product.reorderPoint ? 'var(--danger)' : 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                    <span style={{ backgroundColor: v.stock <= Number(product.reorderPoint) ? '#fee2e2' : '#f1f5f9', color: v.stock <= Number(product.reorderPoint) ? 'var(--danger)' : 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
                       {v.stock} in stock
                     </span>
                   </div>

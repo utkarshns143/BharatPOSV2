@@ -64,7 +64,7 @@ export const Reports: React.FC = () => {
         // Estimate GST based on current catalog
         const catalogProd = products.find(p => p.id === item.prodId);
         if (catalogProd && catalogProd.gstRate) {
-          const rate = catalogProd.gstRate;
+          const rate = Number(catalogProd.gstRate);
           if (catalogProd.priceType === 'exclusive') {
              day.gst += item.total * (rate / 100);
           } else {

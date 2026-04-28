@@ -87,8 +87,8 @@ export const Dashboard: React.FC = () => {
     const alerts: { name: string, variant: string, stock: number, alert: number }[] = [];
     products.forEach(p => {
       p.variants.forEach(v => {
-        if (v.stock <= (p.reorderPoint || 0)) {
-          alerts.push({ name: p.name, variant: v.quantity, stock: v.stock, alert: p.reorderPoint });
+        if (v.stock <= (Number(p.reorderPoint) || 0)) {
+          alerts.push({ name: p.name, variant: v.quantity, stock: v.stock, alert: Number(p.reorderPoint) });
         }
       });
     });

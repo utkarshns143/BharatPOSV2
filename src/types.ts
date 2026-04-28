@@ -19,13 +19,15 @@ export interface AppUser {
   displayName?: string;
   role: 'admin' | 'staff' | 'merchant';
 }
-
 export interface Expense {
   id: string;
   amount: number;
   category: string;
-  date: string;
+  date?: string;
+  timestamp?: string;    // Added for FinanceHQ
   note?: string;
+  description?: string;  // Added for FinanceHQ
+  mode?: string;         // Added for FinanceHQ
 }
 
 export interface ProductBrand {
