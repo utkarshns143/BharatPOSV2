@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { db } from '../config/firebase'; // Ensure this matches your path! (or '../lib/firebase')
+import { db } from '../lib/firebase'; // Ensure this matches your path! (or '../lib/firebase')
 import { doc, setDoc, writeBatch, getDoc } from 'firebase/firestore';
 import type { Product, Sale, Customer, MerchantProfile, Expense } from '../types';
 
