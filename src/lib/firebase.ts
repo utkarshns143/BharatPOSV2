@@ -1,12 +1,7 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { 
-  initializeFirestore, 
-  persistentLocalCache, 
-  persistentMultipleTabManager 
-} from 'firebase/firestore';
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
-// Pulling secure keys from the .env file
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -16,15 +11,22 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// 1. Initialize the Firebase App
-const app = initializeApp(firebaseConfig);
+// 1. Safely initialize Firebase App (Prevents double initialization)
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // 2. Initialize Auth
 export const auth = getAuth(app);
 
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  }),
-  ignoreUndefinedProperties: true // <-- THIS SAVES THE APP FROM CRASHING
-});
+// 3. Safely initialize Firestore with Offline Persistence
+let db;
+try {
+  // Try to setup the offline database
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  });
+} catch (error) {
+  // If it throws the "already initialized" error, we safely grab the existing instance!
+  db = getFirestore(app);
+}
+
+export { db };
