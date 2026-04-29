@@ -155,17 +155,26 @@ export const PointOfSale: React.FC = () => {
           });
         }
       }
-
+// 1. Build the base sale object WITHOUT the optional fields
       const newSale: Sale = {
         id: `INV-${Math.floor(100000 + Math.random() * 900000)}`, 
         timestamp: new Date().toISOString(),
-        items: [...items], total: grandTotal,
-        paymentMethod: method as any, isPaid: method !== 'Udhaar',
-        customerId: finalCustomerId, customerName, customerPhone,
+        items: [...items], 
+        total: grandTotal,
+        paymentMethod: method as any, 
+        isPaid: method !== 'Udhaar',
+        customerName: customerName || '', 
+        customerPhone: customerPhone || '',
         discount: Number(discount) || 0,
-        split: method === 'Partial' ? { cash: cashAmt, online: onlineAmt, udhaar: udhaarAmt } : undefined
       };
 
+      // 2. ONLY add these keys if they have actual data (prevents Firebase "undefined" error)
+      if (finalCustomerId) {
+        newSale.customerId = finalCustomerId;
+      }
+      if (method === 'Partial') {
+        newSale.split = { cash: cashAmt, online: onlineAmt, udhaar: udhaarAmt };
+      }
       // Exact Loose Logic Deduction
       const productsToUpdate = new Map<string, Product>();
       items.forEach(item => {
