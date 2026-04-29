@@ -1,13 +1,13 @@
 // File: src/components/inventory/ProductForm.tsx
 
-import React, { useState, useRef,  } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useDataStore } from '../../store/useDataStore';
 import type { Product, ProductVariant } from '../../types';
-import './ProductForm.css'; // <-- ADD THIS LINE!
-// Let TypeScript know Quagga might be loaded globally via index.html
+
+import './ProductForm.css';
+
 declare const Quagga: any;
 
-// Local interface for managing the deeply nested hierarchical UI state
 interface FormBrand {
   id: string;
   brandName: string;
@@ -26,8 +26,14 @@ interface FormType {
   brands: FormBrand[];
 }
 
-export const ProductForm: React.FC = () => {
+interface ProductFormProps {
+  initialData?: Product | null;
+  onCancel?: () => void;
+}
+
+export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onCancel }) => {
   const addProduct = useDataStore((state) => state.addProduct);
+  const updateProduct = useDataStore((state) => state.updateProduct);
   
   // --- FORM STATE ---
   const [name, setName] = useState('');
@@ -39,7 +45,6 @@ export const ProductForm: React.FC = () => {
   const [batchId, setBatchId] = useState('');
   const [reorderPoint, setReorderPoint] = useState<number | ''>('');
 
-  // Hierarchical Variant State (Type -> Brands)
   const [types, setTypes] = useState<FormType[]>([{
     id: `type_${Date.now()}`,
     typeName: '',
@@ -48,7 +53,7 @@ export const ProductForm: React.FC = () => {
 
   // --- UI TOGGLE STATE ---
   const [showAdvFields, setShowAdvFields] = useState(localStorage.getItem('cfg_adv_fields') === 'true');
-  const [showBatch,] = useState(localStorage.getItem('cfg_batch') === 'true');
+  const [showBatch] = useState(localStorage.getItem('cfg_batch') === 'true');
   const [showGst, setShowGst] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -58,9 +63,68 @@ export const ProductForm: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
 
-  // --- QUAGGA BARCODE STATE ---
   const [isBarcodeScanning, setIsBarcodeScanning] = useState(false);
-  const [, setActiveBarcodeTarget] = useState<{ typeId: string, brandId: string } | null>(null);
+
+  // ════════════════════════════════════════════════════════════
+  // 0. LOAD INITIAL DATA (EDIT MODE) - LOOSE LOGIC FIXED
+  // ════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (initialData) {
+      setName(initialData.name || '');
+      setCategory(initialData.category || '');
+      setHsn(initialData.hsn || '');
+      setGstRate(
+        initialData.gstRate !== undefined && initialData.gstRate !== null && initialData.gstRate !== ''
+          ? Number(initialData.gstRate)
+          : ''
+      );
+      setPriceType(initialData.priceType || 'inclusive');
+      setIsLoose(initialData.isLoose || false);
+      setBatchId(initialData.batchId || '');
+      setReorderPoint(
+        initialData.reorderPoint !== undefined && initialData.reorderPoint !== null && initialData.reorderPoint !== ''
+          ? Number(initialData.reorderPoint)
+          : ''
+      );
+
+      if (initialData.hsn || initialData.gstRate) setShowGst(true);
+      if (initialData.batchId || initialData.reorderPoint !== '') setShowAdvFields(true);
+
+      // Un-flatten the database variants back into the UI state
+      const typeMap: Record<string, FormType> = {};
+      
+      initialData.variants.forEach((v, i) => {
+        const typeName = v.type || 'Standard';
+        if (!typeMap[typeName]) {
+          typeMap[typeName] = { id: `type_${Date.now()}_${i}`, typeName, brands: [] };
+        }
+        
+        // 🛑 EXACT JS LOOSE LOGIC: Reverse the multiplication for the UI
+        let formPrice: number | '' = v.price;
+        if (initialData.isLoose && v.baseQty) {
+          formPrice = Number((v.price / v.baseQty).toFixed(2));
+        }
+
+        const parsedCostPrice = v.costPrice === '' || v.costPrice === null || v.costPrice === undefined
+          ? ''
+          : Number(v.costPrice);
+
+        typeMap[typeName].brands.push({
+          id: `brand_${Date.now()}_${i}`,
+          brandName: v.brandName || '',
+          baseQty: v.baseQty || 1,
+          baseUnit: v.baseUnit || 'pcs',
+          price: formPrice,
+          stock: v.stock || 0,
+          barcode: v.barcode || '',
+          costPrice: Number.isNaN(parsedCostPrice) ? '' : parsedCostPrice,
+          expiryDate: v.expiryDate || ''
+        });
+      });
+
+      setTypes(Object.values(typeMap));
+    }
+  }, [initialData]);
 
   // ════════════════════════════════════════════════════════════
   // 1. VARIANT ENGINE LOGIC
@@ -110,8 +174,6 @@ export const ProductForm: React.FC = () => {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       setStream(mediaStream);
       if (videoRef.current) videoRef.current.srcObject = mediaStream;
-      
-      // Auto-capture after 3 seconds
       setTimeout(captureAndSendToAI, 3000);
     } catch (err) {
       alert("Camera access denied");
@@ -138,7 +200,7 @@ export const ProductForm: React.FC = () => {
     const base64 = canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
 
     stopAIScan();
-    alert("✨ AI Lens analyzing..."); // Replace with proper UI toast later
+    alert("✨ AI Lens analyzing...");
 
     try {
       const res = await fetch('https://server-xy7s.onrender.com/ai-product-scan', {
@@ -152,7 +214,10 @@ export const ProductForm: React.FC = () => {
         if (p.name) setName(p.name);
         if (p.category) setCategory(p.category);
         if (p.hsn_code) setHsn(p.hsn_code);
-        if (p.gst_rate !== null) { setGstRate(p.gst_rate); setShowGst(true); }
+        if (p.gst_rate !== undefined && p.gst_rate !== null && p.gst_rate !== '') {
+          setGstRate(Number(p.gst_rate));
+          setShowGst(true);
+        }
 
         setTypes(prev => {
           const newTypes = [...prev];
@@ -180,7 +245,6 @@ export const ProductForm: React.FC = () => {
   // 3. BARCODE ENGINE
   // ════════════════════════════════════════════════════════════
   const startBarcodeScan = (typeId: string, brandId: string) => {
-    setActiveBarcodeTarget({ typeId, brandId });
     setIsBarcodeScanning(true);
     
     setTimeout(() => {
@@ -198,7 +262,6 @@ export const ProductForm: React.FC = () => {
             const code = result.codeResult.code;
             updateBrand(typeId, brandId, 'barcode', code);
             stopBarcodeScan();
-            // Optional: Play beep sound here
           }
         });
       } else {
@@ -210,11 +273,10 @@ export const ProductForm: React.FC = () => {
   const stopBarcodeScan = () => {
     if (typeof Quagga !== 'undefined') Quagga.stop();
     setIsBarcodeScanning(false);
-   
   };
 
   // ════════════════════════════════════════════════════════════
-  // 4. SUBMISSION
+  // 4. SUBMISSION - LOOSE LOGIC FIXED
   // ════════════════════════════════════════════════════════════
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,7 +284,7 @@ export const ProductForm: React.FC = () => {
 
     try {
       const nowIso = new Date().toISOString();
-      const productId = `prod_${Date.now()}`;
+      const productId = initialData ? initialData.id : `prod_${Date.now()}`;
       
       const flattenedVariants: ProductVariant[] = [];
       
@@ -232,6 +294,7 @@ export const ProductForm: React.FC = () => {
           const bName = b.brandName.trim();
           const finalQuantity = bName ? `${typeVal} - ${bName}` : typeVal;
           
+          // 🛑 EXACT JS LOOSE LOGIC: Multiply by baseQty for DB Storage
           let dbPrice = Number(b.price) || 0;
           if (isLoose) dbPrice = dbPrice * (Number(b.baseQty) || 1);
 
@@ -266,13 +329,13 @@ export const ProductForm: React.FC = () => {
         variants: flattenedVariants
       };
 
-      await addProduct(newProduct);
+      if (initialData) {
+        await updateProduct(newProduct);
+      } else {
+        await addProduct(newProduct);
+      }
 
-      // Reset Form
-      setName(''); setCategory(''); setHsn(''); setGstRate(''); setBatchId(''); setReorderPoint('');
-      setTypes([{ id: `type_${Date.now()}`, typeName: '', brands: [{ id: `brand_${Date.now()}`, brandName: '', baseQty: 1, baseUnit: 'pcs', price: '', stock: '', barcode: '', costPrice: '', expiryDate: '' }] }]);
-      
-      alert("✅ Item Saved Successfully");
+      if (onCancel) onCancel(); // Return to list view
 
     } catch (err) {
       console.error(err);
@@ -283,14 +346,14 @@ export const ProductForm: React.FC = () => {
   };
 
   // ════════════════════════════════════════════════════════════
-  // RENDER (Exact mapping to your HTML Structure)
+  // RENDER
   // ════════════════════════════════════════════════════════════
   return (
     <div className="panel">
       <div className="panel-header">
         <h2 className="panel-title">
           <div className="panel-title-icon blue"><i className="fa-solid fa-layer-group"></i></div>
-          <span>Product Engine</span>
+          <span>{initialData ? 'Edit Product' : 'Product Engine'}</span>
         </h2>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button id="btnStartScan" type="button" className="btn btn-scan btn-icon-only" onClick={startAIScan}>
@@ -305,17 +368,18 @@ export const ProductForm: React.FC = () => {
         </div>
       </div>
 
-      {/* AI LENS SCANNER */}
-      <div className="scanner-box" id="scannerBox" style={{ display: isAIScanning ? 'block' : 'none' }}>
-        <div className="scan-laser"></div>
-        <video id="cameraPreview" ref={videoRef} autoPlay playsInline></video>
-        <canvas id="captureCanvas" ref={canvasRef} style={{ display: 'none' }}></canvas>
-        <div style={{ position: 'absolute', bottom: '10px', width: '100%', textAlign: 'center' }}>
-          <button id="btnStopScan" type="button" className="btn" onClick={stopAIScan} style={{ width: 'auto', display: 'inline-flex', padding: '7px 18px', fontSize: '12px', background: 'rgba(220,38,38,0.9)', color: 'white', borderRadius: '8px', border: 'none' }}>
-            <i className="fa-solid fa-xmark"></i> Stop Lens
-          </button>
+      {isAIScanning && (
+        <div className="scanner-box" id="scannerBox" style={{ display: 'block' }}>
+          <div className="scan-laser"></div>
+          <video id="cameraPreview" ref={videoRef} autoPlay playsInline></video>
+          <canvas id="captureCanvas" ref={canvasRef} style={{ display: 'none' }}></canvas>
+          <div style={{ position: 'absolute', bottom: '10px', width: '100%', textAlign: 'center' }}>
+            <button id="btnStopScan" type="button" className="btn" onClick={stopAIScan} style={{ width: 'auto', display: 'inline-flex', padding: '7px 18px', fontSize: '12px', background: 'rgba(220,38,38,0.9)', color: 'white', borderRadius: '8px', border: 'none' }}>
+              <i className="fa-solid fa-xmark"></i> Stop Lens
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <form id="productForm" onSubmit={handleSaveProduct}>
         <div className="form-group">
@@ -323,7 +387,6 @@ export const ProductForm: React.FC = () => {
           <label className="floating-label">Product Name</label>
         </div>
 
-        {/* VARIANT ENGINE */}
         <div id="variantEngineWrapper">
           <div id="variantEngine">
             {types.map((t, i) => (
@@ -346,7 +409,7 @@ export const ProductForm: React.FC = () => {
                 </div>
 
                 <div className="brands-container">
-                  {t.brands.map((b,) => {
+                  {t.brands.map((b) => {
                     const showBrandInput = t.brands.length > 1 || b.brandName !== '';
                     return (
                       <div key={b.id} className="brand-box" style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1.5px dashed var(--border)', position: 'relative' }}>
@@ -369,7 +432,10 @@ export const ProductForm: React.FC = () => {
 
                           <div className="form-group" style={{ marginBottom: 0 }}>
                             <input type="number" step="0.01" className="form-input b-price" placeholder=" " value={b.price} onChange={e => updateBrand(t.id, b.id, 'price', e.target.value ? Number(e.target.value) : '')} required style={{ fontSize: '16px', fontWeight: 800, color: 'var(--success)', fontFamily: "'JetBrains Mono', monospace" }} />
-                            <label className="floating-label b-price-label">{isLoose ? `Amount per 1 ${b.baseUnit}` : `Amount per ${b.baseQty} ${b.baseUnit}`}</label>
+                            <label className="floating-label b-price-label">
+                              {/* 🛑 EXACT JS LOOSE LOGIC: Dynamic Label */}
+                              {isLoose ? `Amount per 1 ${b.baseUnit}` : `Amount per ${b.baseQty} ${b.baseUnit}`}
+                            </label>
                           </div>
                         </div>
 
@@ -378,7 +444,6 @@ export const ProductForm: React.FC = () => {
                           <label className="floating-label" style={{ color: 'var(--primary)', fontWeight: 700 }}>Stock</label>
                         </div>
 
-                        {/* ADVANCED FIELDS */}
                         <div className="adv-only-field">
                           <div className="variant-grid">
                             <div className="form-group" style={{ marginBottom: 0, position: 'relative' }}>
@@ -454,7 +519,6 @@ export const ProductForm: React.FC = () => {
           </div>
         )}
 
-        {/* ADVANCED GLOBAL DETAILS */}
         {(showAdvFields || showBatch) && (
           <div id="advancedFieldsContainer" style={{ paddingTop: '15px', marginTop: '10px', borderTop: '1.5px dashed var(--border)' }}>
             <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--primary)', marginBottom: '12px', textTransform: 'uppercase' }}>
@@ -492,11 +556,10 @@ export const ProductForm: React.FC = () => {
         )}
 
         <button type="submit" className="btn btn-primary" style={{ marginTop: '20px', fontSize: '15px' }} id="saveBtn" disabled={isSaving}>
-          {isSaving ? <><i className="fa-solid fa-spinner fa-spin"></i> Saving...</> : <><i className="fa-solid fa-cloud-arrow-up"></i> Save to Database</>}
+          {isSaving ? <><i className="fa-solid fa-spinner fa-spin"></i> Saving...</> : <><i className="fa-solid fa-cloud-arrow-up"></i> {initialData ? 'Update Product' : 'Save to Database'}</>}
         </button>
       </form>
 
-      {/* QUAGGA BARCODE MODAL */}
       {isBarcodeScanning && (
         <div id="barcodeScannerModal" className="modal-overlay" style={{ display: 'flex' }}>
           <div className="modal-box" style={{ borderRadius: '16px', padding: '20px', width: '90%', maxWidth: '400px', textAlign: 'center', background: '#0F172A', color: 'white' }}>

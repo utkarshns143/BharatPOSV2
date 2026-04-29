@@ -365,9 +365,13 @@ export const Inventory: React.FC = () => {
                   </div>
 
                   <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '16px', fontWeight: 800, color: 'var(--success)' }}>
-                      ₹{basePrice.toFixed(2)}{p.variants.length > 1 && <span style={{ fontSize: '10px', opacity: 0.6 }}> +</span>}
-                    </div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '16px', fontWeight: 800, color: 'var(--success)' }}>
+
+                        {/* 🛑 EXACT JS LOOSE LOGIC: Appending / unit to the Grid View */}
+                          ₹{basePrice.toFixed(2)} {p.isLoose && <span style={{ fontSize: '12px' }}>/ {vFirst.baseUnit || 'unit'}</span>}
+                              {p.variants.length > 1 && <span style={{ fontSize: '10px', opacity: 0.6 }}> +</span>}
+                               </div>
+
                     <div style={{ fontSize: '12px', fontWeight: 800, color: isLow ? 'var(--danger)' : 'var(--text-main)', background: isLow ? 'var(--danger-soft)' : 'white', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${isLow ? 'rgba(220,38,38,0.2)' : 'var(--border)'}` }}>
                       <i className={`fa-solid ${isLow ? 'fa-triangle-exclamation' : 'fa-circle-check'}`}></i> {totalStock}
                     </div>
@@ -435,7 +439,12 @@ export const Inventory: React.FC = () => {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ fontWeight: 800, fontSize: '14px' }}>{v.quantity}</div>
                           <div style={{ textAlign: 'right' }}>
-                            <div style={{ color: 'var(--success)', fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", fontSize: '16px' }}>₹{v.price}</div>
+                            <div style={{ color: 'var(--success)', fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", fontSize: '16px' }}>
+  {/* 🛑 EXACT JS LOOSE LOGIC: Calculating / unit for the Modal View */}
+  {detailProduct.isLoose 
+    ? `₹${(v.price / (Number(v.baseQty) || 1)).toFixed(2)} / ${v.baseUnit || 'unit'}` 
+    : `₹${v.price}`}
+</div>
                             <div style={{ fontSize: '11px', color: v.stock <= (Number(detailProduct.reorderPoint) || 5) ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 700 }}>Stock: {v.stock}</div>
                           </div>
                         </div>
