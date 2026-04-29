@@ -1,6 +1,14 @@
+// File: src/lib/firebase.ts
+
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { 
+  getFirestore, 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager,
+  Firestore // <-- ADDED: Importing the exact type
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,14 +19,15 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// 1. Safely initialize Firebase App (Prevents double initialization)
+// 1. Safely initialize Firebase App
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // 2. Initialize Auth
 export const auth = getAuth(app);
 
 // 3. Safely initialize Firestore with Offline Persistence
-let db;
+let db: Firestore; // <-- THE FIX: Explicitly telling TypeScript this is a Firestore database
+
 try {
   // Try to setup the offline database
   db = initializeFirestore(app, {
@@ -29,4 +38,4 @@ try {
   db = getFirestore(app);
 }
 
-export { db };
+export { db, app };
