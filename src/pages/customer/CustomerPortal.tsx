@@ -1,324 +1,501 @@
-import React, { useState, useEffect, useMemo } from 'react';
+// File: src/pages/customer/CustomerPortal.tsx
 
-import { useDataStore } from '../../store/useDataStore';
-import { ProductCard } from '../../components/shared/ProductCard';
-import { VariantModal } from '../../components/pos/VariantModal';
-import { formatCurrency } from '../../utils/formatters';
-import type { Product, Sale, CartItem } from '../../types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useCustomerStore } from '../../store/useCustomerStore';
+import { db } from '../../lib/firebase';
+import { collection, collectionGroup, getDocs, addDoc } from 'firebase/firestore';
+import type { Product, Sale } from '../../types';
+
+import './CustomerPortal.css';
+
+declare const L: any;
 
 export const CustomerPortal: React.FC = () => {
-  
-  
-  // --- "BACKEND" CONNECTION ---
-  // In Phase 8, this will fetch directly from Firestore. 
-  // For now, we simulate the cloud by reading the global store.
-  const allSales = useDataStore(state => state.sales);
-  const products = useDataStore(state => state.products);
-  const profile = useDataStore(state => state.profile);
+  // Global Secure State
+  const { phone, setPhone, myBills, shopsMap, activeShopId, setActiveShopId, fetchMyKhata, logoutCustomer } = useCustomerStore();
 
-  // --- APP STATE ---
-  const [phone, setPhone] = useState(localStorage.getItem('customer_phone') || '');
+  // Navigation State
+  const [activeTab, setActiveTab] = useState<'bills' | 'store' | 'khoj'>('bills');
   const [isAuthOpen, setIsAuthOpen] = useState(!phone);
   const [authInput, setAuthInput] = useState('');
-  const [activeTab, setActiveTab] = useState<'bills' | 'store' | 'khoj'>('bills');
   const [isLoading, setIsLoading] = useState(false);
 
-  // --- STORE/CART STATE ---
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
-
-  // --- RECEIPT STATE ---
+  // Bills State
+  const [billFilter, setBillFilter] = useState<'PENDING' | 'PAID'>('PENDING');
   const [viewingReceipt, setViewingReceipt] = useState<Sale | null>(null);
 
-  // --- FETCH CUSTOMER'S DATA ---
-  const myBills = useMemo(() => {
-    if (!phone) return [];
-    // Only fetch bills belonging to this exact phone number
-    return allSales
-      .filter(s => s.customerId === phone)
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [allSales, phone]);
+  // Store State
+  const [products, setProducts] = useState<Product[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCat, setActiveCat] = useState('ALL');
+  const [cart, setCart] = useState<Record<string, any>>({});
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [wizProd, setWizProd] = useState<Product | null>(null);
+  const [wizVariant, setWizVariant] = useState<any | null>(null);
+  const [wizQty, setWizQty] = useState(1);
 
-  const totalPendingUdhaar = useMemo(() => {
-    return myBills.reduce((total, bill) => {
-      if (bill.paymentMethod === 'Udhaar') return total + bill.total;
-      if (bill.split && bill.split.udhaar > 0) return total + bill.split.udhaar;
-      return total;
-    }, 0);
-  }, [myBills]);
+  // Map State
+  const mapRef = useRef<any>(null);
+  const markersRef = useRef<any>(null);
+  const routingRef = useRef<any>(null);
+  const [mapDistance, setMapDistance] = useState<string | null>(null);
+  const [khojSearch, setKhojSearch] = useState('');
 
-  // --- ACTIONS ---
+  // ════════════════════════════════════════════════════════════
+  // INITIALIZATION & AUTH
+  // ════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (phone && phone.length === 10) {
+      setIsAuthOpen(false);
+      fetchMyKhata();
+    }
+  }, [phone, fetchMyKhata]);
+
   const handleLogin = () => {
     if (authInput.length !== 10) return alert("Please enter a valid 10-digit number.");
     setIsLoading(true);
     setTimeout(() => {
       setPhone(authInput);
-      localStorage.setItem('customer_phone', authInput);
-      setIsAuthOpen(false);
       setIsLoading(false);
-    }, 800);
+    }, 600);
   };
 
   const handleLogout = () => {
     if (window.confirm("Log out of your Khata?")) {
-      localStorage.removeItem('customer_phone');
-      setPhone('');
+      logoutCustomer();
       setAuthInput('');
       setIsAuthOpen(true);
-      setCart([]);
+      setCart({});
     }
   };
 
-  const handleAddToCart = (product: Product, variantId?: string, qty: number = 1) => {
-    const targetVariantId = variantId || product.variants[0].id;
-    const variant = product.variants.find(v => v.id === targetVariantId) || product.variants[0];
+  // ════════════════════════════════════════════════════════════
+  // BILLS LOGIC (Translated from khata_bills.js)
+  // ════════════════════════════════════════════════════════════
+  const { pendingBills, paidBills, totalSpent, totalPending } = useMemo(() => {
+    let tSpent = 0; let tPending = 0;
+    const pBills: Sale[] = []; const resBills: Sale[] = [];
+    
+    const filteredSales = activeShopId === 'ALL' ? myBills : myBills.filter(s => s._branchId === activeShopId);
 
-    const existingIndex = cart.findIndex(item => item.prodId === product.id && item.variantId === targetVariantId);
-    if (existingIndex >= 0) {
-      const newCart = [...cart];
-      newCart[existingIndex].qty += qty;
-      newCart[existingIndex].total = newCart[existingIndex].qty * newCart[existingIndex].price;
-      setCart(newCart);
-    } else {
-      setCart([...cart, {
-        prodId: product.id,
-        variantId: targetVariantId,
-        name: product.name,
-        variantName: variant.quantity,
-        price: variant.price,
-        qty: qty,
-        isLoose: product.isLoose,
-        total: qty * variant.price
-      }]);
-    }
-  };
+    filteredSales.forEach(sale => {
+      const isPending = !sale.isPaid && (sale.paymentMethod === 'Udhaar' || (sale.paymentMethod === 'Partial' && sale.split && sale.split.udhaar > 0));
+      const pendingAmt = sale.split?.udhaar || sale.total;
 
-  const handlePlaceOrder = () => {
-    alert("Order sent to shop successfully! They will contact you shortly.");
-    setCart([]);
-    setActiveTab('bills');
-  };
+      if (isPending) {
+        tPending += pendingAmt;
+        pBills.push({ ...sale, _pendingAmt: pendingAmt } as any);
+      } else {
+        tSpent += sale.total;
+        resBills.push(sale);
+      }
+    });
 
-  // --- MAP INITIALIZATION ---
+    return { 
+      pendingBills: pBills.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()), 
+      paidBills: resBills.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()), 
+      totalSpent: tSpent, 
+      totalPending: tPending 
+    };
+  }, [myBills, activeShopId]);
+
+  // ════════════════════════════════════════════════════════════
+  // STORE LOGIC (Translated from khata_store.js)
+  // ════════════════════════════════════════════════════════════
   useEffect(() => {
-    if (activeTab === 'khoj' && profile?.lat && profile?.lng) {
-      // Dynamically load Leaflet for the map tab
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
+    const fetchProducts = async () => {
+      if (activeTab === 'store' && activeShopId && activeShopId !== 'ALL') {
+        const prodSnap = await getDocs(collection(db, "shops", activeShopId, "products"));
+        const pList: Product[] = [];
+        prodSnap.forEach(d => pList.push({ id: d.id, ...d.data() } as Product));
+        setProducts(pList);
+      }
+    };
+    fetchProducts();
+  }, [activeTab, activeShopId]);
 
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.onload = () => {
-        const L = (window as any).L;
-        const container = document.getElementById('khojMapContainer');
-        if (container && !container.innerHTML) {
-          const map = L.map('khojMapContainer').setView([profile.lat, profile.lng], 15);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-          L.marker([profile.lat, profile.lng]).addTo(map)
-            .bindPopup(`<b>${profile.shopName}</b><br>Your Local Store`).openPopup();
-        }
-      };
-      document.body.appendChild(script);
-    }
-  }, [activeTab, profile]);
+  const uniqueCats = useMemo(() => Array.from(new Set(products.map(p => p.category).filter(Boolean))), [products]);
+  
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => {
+      const matchCat = activeCat === 'ALL' || p.category === activeCat;
+      const matchName = p.name.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchCat && matchName;
+    });
+  }, [products, activeCat, searchQuery]);
 
-  // --- INLINE CSS FOR CUSTOMER THEME ---
-  const theme = {
-    bg: '#f4f7f6', card: '#ffffff',
-    primary: '#6366f1', gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-    textMain: '#1e293b', textSub: '#64748b'
+  const cartTotal = Object.values(cart).reduce((sum, i) => sum + (i.price * i.qty), 0);
+  const cartItemCount = Object.values(cart).reduce((sum, i) => sum + i.qty, 0);
+
+  const openWizard = (prod: Product) => {
+    setWizProd(prod);
+    setWizVariant(prod.variants[0]);
+    setWizQty(1);
+    setIsWizardOpen(true);
   };
 
-  return (
-    <div style={{ backgroundColor: theme.bg, minHeight: '100vh', fontFamily: 'var(--font-body)', color: theme.textMain, paddingBottom: '80px' }}>
-      
-      {/* HEADER */}
-      <header style={{ backgroundColor: theme.card, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 1000, boxShadow: '0 4px 20px rgba(0,0,0,0.03)', borderBottom: '1px solid #e2e8f0' }}>
-        <div style={{ fontSize: '20px', fontWeight: 800, background: theme.gradient, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-          Mera Khata
-        </div>
-        <div style={{ position: 'relative', flex: 1, maxWidth: '200px', marginLeft: '15px' }}>
-          <select style={{ width: '100%', appearance: 'none', background: '#e0e7ff', color: theme.primary, border: '1.5px solid #c7d2fe', padding: '8px 30px 8px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: 800, outline: 'none' }}>
-            <option>{profile?.shopName || 'Connecting to Shop...'}</option>
-          </select>
-          <i className="fa-solid fa-chevron-down" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.primary, fontSize: '10px', pointerEvents: 'none' }}></i>
-        </div>
-        {phone && (
-          <button onClick={handleLogout} style={{ background: '#f1f5f9', border: 'none', color: theme.textSub, width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', marginLeft: '10px' }}>
-            <i className="fa-solid fa-right-from-bracket"></i>
-          </button>
-        )}
-      </header>
+  const handleAddToCart = (prod: Product, variant: any, qty: number) => {
+    const key = `${prod.id}_${variant.id}`;
+    let price = variant.price;
+    if (prod.isLoose) price = price / (Number(variant.baseQty) || 1);
 
-      {/* MAIN CONTENT AREA */}
-      <main style={{ padding: '16px' }}>
-        
-        {/* TAB: BILLS & UDHAAR */}
-        {activeTab === 'bills' && (
-          <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            {totalPendingUdhaar > 0 && (
-              <div style={{ background: '#fff5f5', border: '1.5px solid #fecaca', borderRadius: '16px', padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', boxShadow: '0 8px 25px rgba(220,38,38,0.08)' }}>
-                <div>
-                  <div style={{ fontSize: '11px', color: '#dc2626', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>Total Due Amount</div>
-                  <div style={{ fontFamily: 'monospace', fontSize: '26px', fontWeight: 800, color: '#dc2626', marginTop: '4px' }}>{formatCurrency(totalPendingUdhaar)}</div>
-                </div>
-                <i className="fa-solid fa-hand-holding-dollar" style={{ fontSize: '36px', color: '#dc2626', opacity: 0.8 }}></i>
-              </div>
-            )}
+    setCart(prev => ({
+      ...prev,
+      [key]: prev[key] ? { ...prev[key], qty: prev[key].qty + qty } : {
+        prodId: prod.id, variantId: variant.id, name: prod.name,
+        variantName: variant.quantity, price, qty
+      }
+    }));
+    setIsWizardOpen(false);
+  };
 
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 800 }}>Recent Purchases</h3>
+  const handleCustomService = () => {
+    const name = prompt("Enter the service you need (e.g., Fan Repair, Custom Grocery List):");
+    if (!name) return;
+    const id = `srv_${Date.now()}`;
+    setCart(prev => ({ ...prev, [id]: { prodId: id, variantId: 'custom', name: `Service: ${name}`, variantName: '', price: 0, qty: 1, isService: true } }));
+  };
+
+  const placeOrder = async () => {
+    if (Object.keys(cart).length === 0 || !activeShopId || activeShopId === 'ALL') return;
+    setIsLoading(true);
+
+    try {
+      const itemsArr = Object.values(cart).map(i => ({ id: i.prodId, name: i.name + (i.variantName ? ` (${i.variantName})` : ''), price: i.price, qty: i.qty }));
+      const order = {
+        date: new Date().toISOString(), customerMobile: phone, customerName: "Khata App User",
+        status: "PENDING", orderType: Object.values(cart).some(i => i.isService) ? "Service Request" : "Home Delivery",
+        totalAmount: cartTotal, items: itemsArr
+      };
+
+      await addDoc(collection(db, "shops", activeShopId, "onlineOrders"), order);
+      alert("Order sent successfully!");
+      setCart({});
+      setActiveTab('bills');
+    } catch (e) {
+      alert("Failed to send order.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // KHOJ MAP LOGIC (Translated from khata_khoj.js)
+  // ════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (activeTab === 'khoj') {
+      if (!mapRef.current) {
+        const L = (window as any).L;
+        const initialLoc = [20.5937, 78.9629];
+        mapRef.current = L.map('leafletMap', { zoomControl: false }).setView(initialLoc, 5);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(mapRef.current);
+        markersRef.current = L.layerGroup().addTo(mapRef.current);
+
+        // Load all shops
+        Object.values(shopsMap).forEach(shop => {
+          if (shop.lat && shop.lng) {
+            const dotIcon = L.divIcon({ className: 'custom-div-icon', iconSize: [14, 14] });
+            L.marker([shop.lat, shop.lng], { icon: dotIcon }).addTo(markersRef.current);
+          }
+        });
+
+        // Get User Location
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(pos => {
+            const loc = [pos.coords.latitude, pos.coords.longitude];
+            mapRef.current.setView(loc, 13);
+            L.circleMarker(loc, { radius: 8, fillColor: '#3b82f6', color: '#fff', weight: 3, opacity: 1, fillOpacity: 1 }).addTo(mapRef.current).bindPopup("You are here");
             
-            {myBills.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: theme.textSub }}>
-                <i className="fa-solid fa-receipt" style={{ fontSize: '32px', marginBottom: '10px', opacity: 0.5 }}></i>
-                <p style={{ fontWeight: 600 }}>No bills found for your number.</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {myBills.map(bill => (
-                  <div key={bill.id} onClick={() => setViewingReceipt(bill)} style={{ background: theme.card, padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
-                    <div>
-                      <div style={{ fontSize: '14px', fontWeight: 800, color: theme.textMain }}>{bill.id}</div>
-                      <div style={{ fontSize: '11px', color: theme.textSub, fontWeight: 600, marginTop: '2px' }}>{new Date(bill.timestamp).toLocaleDateString()} • {bill.items.length} items</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontFamily: 'monospace', fontSize: '16px', fontWeight: 800, color: bill.paymentMethod === 'Udhaar' || (bill.split && bill.split.udhaar > 0) ? '#dc2626' : '#16a34a' }}>
-                        {formatCurrency(bill.total)}
-                      </div>
-                      <div style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', background: '#f1f5f9', display: 'inline-block', padding: '2px 6px', borderRadius: '4px', marginTop: '4px' }}>
-                        {bill.paymentMethod}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            // Highlight Nearest
+            let minD = Infinity; let nearest: any = null;
+            Object.values(shopsMap).forEach(s => {
+              if (s.lat && s.lng) {
+                const d = Math.sqrt(Math.pow(s.lat - loc[0], 2) + Math.pow(s.lng - loc[1], 2));
+                if (d < minD) { minD = d; nearest = s; }
+              }
+            });
+
+            if (nearest) {
+              const pinIcon = L.divIcon({ className: 'matched-pin', html: '<i class="fa-solid fa-location-dot pin-icon"></i>', iconSize: [38, 38], iconAnchor: [19, 38], popupAnchor: [0, -38] });
+              L.marker([nearest.lat, nearest.lng], { icon: pinIcon }).addTo(markersRef.current)
+                .bindPopup(`<div style="text-align:center;"><b>Nearest Shop: ${nearest.name}</b><br><button onclick="window.drawRoute(${nearest.lat}, ${nearest.lng}, ${loc[0]}, ${loc[1]})" style="background:#6366f1;color:white;border:none;padding:5px 10px;border-radius:5px;margin-top:5px;cursor:pointer;">Get Route</button></div>`).openPopup();
+            }
+          });
+        }
+
+        // Expose routing to global scope for Leaflet popups
+        (window as any).drawRoute = (tLat: number, tLng: number, uLat: number, uLng: number) => {
+          if (routingRef.current) mapRef.current.removeControl(routingRef.current);
+          routingRef.current = L.Routing.control({
+            waypoints: [L.latLng(uLat, uLng), L.latLng(tLat, tLng)],
+            routeWhileDragging: false, addWaypoints: false, show: false,
+            lineOptions: { styles: [{ color: '#6366f1', opacity: 0.8, weight: 6 }] }
+          }).addTo(mapRef.current);
+
+          routingRef.current.on('routesfound', (e: any) => {
+            setMapDistance(`${(e.routes[0].summary.totalDistance / 1000).toFixed(2)} km`);
+          });
+        };
+      }
+    }
+  }, [activeTab, shopsMap]);
+
+  const handleKhojSearch = async () => {
+    if (!khojSearch) return;
+    markersRef.current.clearLayers();
+    
+    // Re-add background dots
+    Object.values(shopsMap).forEach(shop => {
+      if (shop.lat && shop.lng) L.marker([shop.lat, shop.lng], { icon: L.divIcon({ className: 'custom-div-icon', iconSize: [14, 14] }) }).addTo(markersRef.current);
+    });
+
+    const q = khojSearch.toLowerCase();
+    const prodSnap = await getDocs(collectionGroup(db, 'products'));
+    const foundShops: Record<string, any> = {};
+
+    prodSnap.forEach(d => {
+      const p = d.data();
+      const sId = d.ref.parent.parent?.id;
+      if (p.name?.toLowerCase().includes(q) && sId && shopsMap[sId]) {
+        if (!foundShops[sId]) foundShops[sId] = { shop: shopsMap[sId], products: [] };
+        foundShops[sId].products.push(p);
+      }
+    });
+
+    if (Object.keys(foundShops).length > 0) {
+      const pinIcon = L.divIcon({ className: 'matched-pin', html: '<i class="fa-solid fa-location-dot pin-icon"></i>', iconSize: [38, 38], iconAnchor: [19, 38], popupAnchor: [0, -38] });
+      Object.values(foundShops).forEach(s => {
+        L.marker([s.shop.lat, s.shop.lng], { icon: pinIcon }).addTo(markersRef.current)
+          .bindPopup(`<div style="text-align:center;"><b>${s.shop.name}</b><br>Has ${s.products.length} matches.</div>`);
+      });
+      mapRef.current.fitBounds(new L.featureGroup(markersRef.current.getLayers()).getBounds().pad(0.1));
+    } else {
+      alert("No shops found selling this item nearby.");
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // RENDER UI
+  // ════════════════════════════════════════════════════════════
+  return (
+    <div className="khata-app">
+      <header className="app-header">
+        <div className="app-brand">Khata</div>
+        {Object.keys(shopsMap).length > 0 && activeTab !== 'khoj' && (
+          <div className="shop-selector-wrapper" style={{ display: 'block' }}>
+            <i className="fa-solid fa-store"></i>
+            <select className="shop-selector" value={activeShopId || ''} onChange={e => setActiveShopId(e.target.value)}>
+              <option value="ALL">All My Shops</option>
+              {Object.values(shopsMap).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
           </div>
         )}
+        {phone && <div className="user-chip" onClick={handleLogout}><i className="fa-solid fa-right-from-bracket"></i></div>}
+      </header>
 
-        {/* TAB: STORE / ORDER */}
-        {activeTab === 'store' && (
-          <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 800 }}>Shop Online</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px' }}>
-              {products.map(p => (
-                <ProductCard 
-                  key={p.id} product={p} actionLabel="Add"
-                  onActionClick={(product) => {
-                    if (product.variants.length === 1 && !product.isLoose) handleAddToCart(product);
-                    else { setSelectedProduct(product); setIsVariantModalOpen(true); }
-                  }}
-                />
+      {/* --- TAB: BILLS --- */}
+      <main className={`tab-view ${activeTab === 'bills' ? 'active' : ''}`}>
+        <div className="kpi-grid">
+          <div className="kpi-card">
+            <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-sub)', textTransform: 'uppercase' }}>Total Lifetime Spent Here</div>
+            <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-main)', fontFamily: "'JetBrains Mono', monospace", marginTop: '4px' }}>₹{totalSpent.toFixed(2)}</div>
+          </div>
+        </div>
+
+        <div className="tab-switch">
+          <button className={`tab-btn ${billFilter === 'PENDING' ? 'active' : ''}`} onClick={() => setBillFilter('PENDING')}>Pending (₹{totalPending.toFixed(2)})</button>
+          <button className={`tab-btn ${billFilter === 'PAID' ? 'active' : ''}`} onClick={() => setBillFilter('PAID')}>Resolved Bills</button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {(billFilter === 'PENDING' ? pendingBills : paidBills).length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-sub)', fontWeight: 600 }}>No {billFilter.toLowerCase()} bills found.</div>
+          ) : (
+            (billFilter === 'PENDING' ? pendingBills : paidBills).map((b: any) => (
+              <div key={b.id} className="bill-card" onClick={() => setViewingReceipt(b)}>
+                <div className="bill-header">
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--text-main)' }}>{shopsMap[b._branchId]?.name || 'Local Shop'}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-sub)', fontWeight: 600, marginTop: '2px' }}>{new Date(b.timestamp).toLocaleDateString()} • #{b.id.slice(-6)}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: '16px', color: billFilter === 'PENDING' ? '#ef4444' : '#10b981' }}>
+                      ₹{Number(billFilter === 'PENDING' ? b._pendingAmt : b.total).toFixed(2)}
+                    </div>
+                    <div style={{ marginTop: '4px', display: 'inline-block', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', background: billFilter === 'PENDING' ? '#fee2e2' : '#d1fae5', color: billFilter === 'PENDING' ? '#ef4444' : '#10b981' }}>
+                      {billFilter === 'PENDING' ? 'Due' : 'Paid'}
+                    </div>
+                  </div>
+                </div>
+                <div className="bill-items">{b.items.map((i: any) => `${i.qty}x ${i.name}`).join(', ')}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </main>
+
+      {/* --- TAB: STORE --- */}
+      <main className={`tab-view ${activeTab === 'store' ? 'active' : ''}`}>
+        {!activeShopId || activeShopId === 'ALL' ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-sub)', fontWeight: 700 }}>Select a specific shop from the top menu to view its catalog.</div>
+        ) : (
+          <>
+            <div style={{ position: 'relative' }}>
+              <i className="fa-solid fa-magnifying-glass search-icon"></i>
+              <input type="text" className="search-bar" placeholder="Search for items..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            </div>
+
+            <div className="cat-scroll">
+              <div className={`cat-chip ${activeCat === 'ALL' ? 'active' : ''}`} onClick={() => setActiveCat('ALL')}>All Items</div>
+              {uniqueCats.map(c => <div key={c} className={`cat-chip ${activeCat === c ? 'active' : ''}`} onClick={() => setActiveCat(c)}>{c}</div>)}
+            </div>
+
+            <div className="prod-grid">
+              <div className="prod-item" style={{ border: '2px dashed var(--brand-primary)', cursor: 'pointer', background: '#eff6ff' }} onClick={handleCustomService}>
+                <div>
+                  <div style={{ fontSize: '10px', color: 'var(--brand-primary)', fontWeight: 800, textTransform: 'uppercase', marginBottom: '4px' }}>Custom Request</div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-main)', lineHeight: 1.3 }}>Request a Service</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-sub)', fontWeight: 600, marginTop: '4px' }}>Fan Repair, Plumbing, etc.</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--brand-primary)', marginTop: '8px', textAlign: 'center' }}><i className="fa-solid fa-screwdriver-wrench fa-lg"></i></div>
+                  <button className="btn-add" style={{ background: 'var(--brand-primary)', color: 'white' }}>Add Request</button>
+                </div>
+              </div>
+
+              {filteredProducts.map(p => {
+                const v = p.variants[0];
+                const priceStr = p.isLoose ? `₹${(v.price / (Number(v.baseQty) || 1)).toFixed(2)}` : `₹${v.price}`;
+                const unitLabel = p.isLoose ? v.baseUnit : (v.quantity || 'pc');
+
+                return (
+                  <div key={p.id} className="prod-item">
+                    <div>
+                      <div style={{ fontSize: '10px', color: 'var(--brand-primary)', fontWeight: 800, textTransform: 'uppercase', marginBottom: '4px' }}>{p.category || 'Gen'}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-main)', lineHeight: 1.3 }}>{p.name}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-sub)', fontWeight: 600, marginTop: '4px' }}>{v.quantity}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '15px', fontWeight: 800, color: '#10b981', fontFamily: "'JetBrains Mono', monospace", marginTop: '8px' }}>{priceStr} <span style={{ fontSize: '10px', color: 'var(--text-sub)' }}>/ {unitLabel}</span></div>
+                      <button className="btn-add" onClick={() => { if (p.variants.length > 1) openWizard(p); else handleAddToCart(p, v, 1); }}>{p.variants.length > 1 ? 'Select Options' : '+ Add to Cart'}</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {cartItemCount > 0 && (
+              <div style={{ position: 'fixed', bottom: '80px', left: '16px', right: '16px', background: 'var(--text-main)', color: 'white', padding: '16px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 1000, boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Your Cart</div>
+                  <div style={{ fontSize: '16px', fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", marginTop: '2px' }}>{cartItemCount} Items | ₹{cartTotal.toFixed(2)}</div>
+                </div>
+                <button onClick={placeOrder} disabled={isLoading} style={{ background: 'var(--brand-accent)', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '10px', fontWeight: 800, fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 10px rgba(245, 158, 11, 0.3)' }}>
+                  {isLoading ? 'Sending...' : 'Place Order ➔'}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      {/* --- TAB: KHOJ --- */}
+      <main className={`tab-view ${activeTab === 'khoj' ? 'active' : ''}`} style={{ padding: 0 }}>
+        <div id="leafletMap" style={{ width: '100%', height: 'calc(100vh - 140px)', borderRadius: '24px 24px 0 0' }}></div>
+        <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px', zIndex: 1000, background: 'white', padding: '14px 20px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '12px', border: '1.5px solid var(--brand-primary)' }}>
+            <i className="fa-solid fa-radar" style={{ color: 'var(--brand-primary)' }}></i>
+            <input type="text" placeholder="Find 'Atta' nearby..." value={khojSearch} onChange={e => setKhojSearch(e.target.value)} style={{ border: 'none', outline: 'none', width: '100%', fontSize: '14px', fontWeight: 600 }} />
+            <button onClick={handleKhojSearch} style={{ background: 'var(--brand-primary)', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '12px', fontWeight: 800 }}><i className="fa-solid fa-magnifying-glass"></i></button>
+        </div>
+        {mapDistance && <div style={{ position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', background: 'var(--brand-primary)', color: 'white', padding: '10px 20px', borderRadius: '20px', fontWeight: 800, fontSize: '12px', zIndex: 2000, boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}><i className="fa-solid fa-route"></i> Distance: {mapDistance}</div>}
+      </main>
+
+      {/* --- NAV & MODALS --- */}
+      <nav className="bottom-nav">
+        <div className={`nav-item ${activeTab === 'bills' ? 'active' : ''}`} onClick={() => setActiveTab('bills')}><i className="fa-solid fa-file-invoice-dollar"></i><span>Bills</span></div>
+        <div className={`nav-item ${activeTab === 'store' ? 'active' : ''}`} onClick={() => setActiveTab('store')}><i className="fa-solid fa-basket-shopping"></i><span>Order</span></div>
+        <div className={`nav-item ${activeTab === 'khoj' ? 'active' : ''}`} onClick={() => setActiveTab('khoj')}><i className="fa-solid fa-radar"></i><span>Khoj</span></div>
+      </nav>
+
+      {/* Auth Modal */}
+      {isAuthOpen && (
+        <div className="khata-modal-overlay" style={{ zIndex: 3000 }}>
+          <div className="khata-modal-box" style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '40px', marginBottom: '16px' }}>👋</div>
+            <h2 style={{ margin: '0 0 8px 0', fontSize: '24px' }}>Welcome to Khata</h2>
+            <p style={{ color: 'var(--text-sub)', fontSize: '14px', marginBottom: '24px', fontWeight: 600 }}>Enter your phone number to access your digital bills & stores.</p>
+            <input type="tel" className="auth-input" value={authInput} onChange={e => setAuthInput(e.target.value)} placeholder="10-digit Mobile No." maxLength={10} />
+            <button className="btn-main" onClick={handleLogin} disabled={isLoading}>{isLoading ? 'Syncing...' : 'Enter Securely ➔'}</button>
+          </div>
+        </div>
+      )}
+
+      {/* Store Wizard Modal */}
+      {isWizardOpen && wizProd && (
+        <div className="khata-modal-overlay">
+          <div className="khata-modal-box">
+            <button className="btn-close" onClick={() => setIsWizardOpen(false)}><i className="fa-solid fa-xmark"></i></button>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '18px' }}>{wizProd.name}</h3>
+            
+            <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-sub)', textTransform: 'uppercase', marginBottom: '10px' }}>Select Type/Size</div>
+            <div className="wizard-step-grid">
+              {wizProd.variants.map(v => (
+                <button key={v.id} className={`btn-wizard-opt ${wizVariant?.id === v.id ? 'active' : ''}`} onClick={() => setWizVariant(v)}>
+                  <div>
+                    <span>{v.quantity}</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'block', marginTop: '4px' }}>Avail: {v.stock}</span>
+                  </div>
+                  <span style={{ color: 'var(--brand-primary)', fontWeight: 800 }}>₹{v.price}</span>
+                </button>
               ))}
             </div>
 
-            {/* Floating Cart Button */}
-            {cart.length > 0 && (
-              <div style={{ position: 'fixed', bottom: '80px', left: '16px', right: '16px', background: theme.gradient, color: 'white', padding: '16px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 10px 25px rgba(99, 102, 241, 0.4)', zIndex: 100 }}>
-                <div style={{ fontWeight: 800 }}>{cart.reduce((sum, i) => sum + i.qty, 0)} Items | {formatCurrency(cart.reduce((sum, i) => sum + i.total, 0))}</div>
-                <button onClick={handlePlaceOrder} style={{ background: 'white', color: theme.primary, border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: 800, cursor: 'pointer' }}>Send Order <i className="fa-solid fa-paper-plane"></i></button>
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-sub)', textTransform: 'uppercase', marginBottom: '10px' }}>Quantity</div>
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '20px', marginBottom: '20px' }}>
+                <button onClick={() => setWizQty(Math.max(1, wizQty - 1))} style={{ width: '40px', height: '40px', borderRadius: '20px', border: 'none', background: '#e2e8f0', fontSize: '20px', fontWeight: 800, cursor: 'pointer' }}>-</button>
+                <div style={{ fontSize: '28px', fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>{wizQty}</div>
+                <button onClick={() => setWizQty(wizQty + 1)} style={{ width: '40px', height: '40px', borderRadius: '20px', border: 'none', background: '#e0e7ff', color: 'var(--brand-primary)', fontSize: '20px', fontWeight: 800, cursor: 'pointer' }}>+</button>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB: KHOJ (MAP) */}
-        {activeTab === 'khoj' && (
-          <div style={{ animation: 'fadeIn 0.3s ease', height: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 800 }}>Store Location</h3>
-            {profile?.lat && profile?.lng ? (
-              <div id="khojMapContainer" style={{ flex: 1, borderRadius: '16px', overflow: 'hidden', border: '2px solid #e2e8f0' }}></div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: theme.textSub, background: theme.card, borderRadius: '16px', border: '1px dashed #cbd5e1' }}>
-                <i className="fa-solid fa-map-location-dot" style={{ fontSize: '32px', marginBottom: '10px', opacity: 0.5 }}></i>
-                <p style={{ fontWeight: 600 }}>Shop owner hasn't updated their GPS location yet.</p>
-              </div>
-            )}
-          </div>
-        )}
-
-      </main>
-
-      {/* BOTTOM NAVIGATION */}
-      <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(12px)', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-around', padding: '12px 10px 24px 10px', zIndex: 1000 }}>
-        {[
-          { id: 'bills', icon: 'fa-file-invoice-dollar', label: 'Bills' },
-          { id: 'store', icon: 'fa-basket-shopping', label: 'Order' },
-          { id: 'khoj', icon: 'fa-radar', label: 'Khoj' }
-        ].map(tab => (
-          <div 
-            key={tab.id} onClick={() => setActiveTab(tab.id as any)}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: activeTab === tab.id ? theme.primary : theme.textSub, fontSize: '11px', fontWeight: 700, width: '33%', cursor: 'pointer' }}
-          >
-            <i className={`fa-solid ${tab.icon}`} style={{ fontSize: '20px', padding: '8px 16px', borderRadius: '16px', background: activeTab === tab.id ? '#e0e7ff' : 'transparent', transition: '0.2s' }}></i>
-            <span>{tab.label}</span>
-          </div>
-        ))}
-      </nav>
-
-      {/* AUTH OVERLAY */}
-      {isAuthOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', backdropFilter: 'blur(8px)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '24px' }}>
-          <div style={{ background: 'white', borderRadius: '24px', padding: '30px', width: '100%', maxWidth: '400px', textAlign: 'center' }}>
-            <div style={{ fontSize: '40px', marginBottom: '16px' }}>👋</div>
-            <h2 style={{ margin: '0 0 8px 0', fontFamily: 'var(--font-head)', fontSize: '24px' }}>Welcome to Khata</h2>
-            <p style={{ color: theme.textSub, fontSize: '14px', marginBottom: '24px', fontWeight: 600 }}>Enter your phone number to access your digital bills & local stores.</p>
-            <input 
-              type="tel" value={authInput} onChange={(e) => setAuthInput(e.target.value)}
-              placeholder="10-digit Mobile No." maxLength={10}
-              style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '16px', fontWeight: 700, marginBottom: '16px', textAlign: 'center', letterSpacing: '2px', outline: 'none', boxSizing: 'border-box' }} 
-            />
-            <button onClick={handleLogin} disabled={isLoading} style={{ background: theme.gradient, color: 'white', border: 'none', padding: '16px', borderRadius: '12px', fontSize: '16px', fontWeight: 800, width: '100%', cursor: 'pointer', boxShadow: '0 8px 20px rgba(99, 102, 241, 0.3)' }}>
-              {isLoading ? 'Verifying...' : 'Enter Securely ➔'}
-            </button>
-            <div style={{ marginTop: '16px', fontSize: '12px', color: theme.textSub, fontWeight: 600 }}>
-               (Try using the phone number you entered during billing!)
+              <button className="btn-main" onClick={() => handleAddToCart(wizProd, wizVariant, wizQty)}><i className="fa-solid fa-cart-plus"></i> Add to Cart</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* THERMAL RECEIPT MODAL */}
+      {/* Thermal Receipt Modal */}
       {viewingReceipt && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 3000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div style={{ background: '#f8fafc', padding: '20px 16px', borderRadius: '8px', width: '100%', maxWidth: '350px', position: 'relative' }}>
-            <button onClick={() => setViewingReceipt(null)} style={{ position: 'absolute', right: '10px', top: '10px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✕</button>
-            
-            {/* The Thermal Paper Look */}
-            <div style={{ background: '#fff', fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: '#000', padding: '20px 10px', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' }}>
+        <div className="khata-modal-overlay" style={{ background: 'rgba(0,0,0,0.8)' }}>
+          <div className="khata-modal-box" style={{ background: '#f8fafc', padding: '20px 16px' }}>
+            <button className="btn-close" onClick={() => setViewingReceipt(null)}><i className="fa-solid fa-xmark"></i></button>
+            <div style={{ background: '#fff', fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', padding: '10px' }}>
               <div style={{ textAlign: 'center', borderBottom: '1.5px dashed #000', paddingBottom: '12px', marginBottom: '12px' }}>
-                <h2 style={{ margin: 0, fontSize: '18px' }}>{profile?.shopName || 'BharatPOS Store'}</h2>
-                <div>INV: {viewingReceipt.id}</div>
-                <div>{new Date(viewingReceipt.timestamp).toLocaleString()}</div>
+<h2 style={{ margin: 0, fontSize: '16px' }}>{shopsMap[viewingReceipt._branchId || '']?.name || 'Retail Store'}</h2>
+                <div style={{ fontSize: '10px', marginTop: '4px' }}>TAX INVOICE</div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <span>Inv: #{viewingReceipt.id.slice(-6)}</span>
+                <span>Date: {new Date(viewingReceipt.timestamp).toLocaleDateString()}</span>
               </div>
               <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', marginBottom: '12px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px dashed #000' }}>
-                    <th style={{ padding: '4px 0' }}>Item</th>
-                    <th style={{ padding: '4px 0', textAlign: 'center' }}>Qty</th>
-                    <th style={{ padding: '4px 0', textAlign: 'right' }}>Amt</th>
-                  </tr>
-                </thead>
+                <thead><tr style={{ borderBottom: '1px dashed #000' }}><th>Item</th><th style={{ textAlign: 'center' }}>Qty</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead>
                 <tbody>
                   {viewingReceipt.items.map((i, idx) => (
                     <tr key={idx}>
-                      <td style={{ padding: '6px 0', borderBottom: '1px dotted #ccc' }}>{i.name}<br/><small>{i.variantName}</small></td>
+                      <td style={{ padding: '6px 0', borderBottom: '1px dotted #ccc' }}>{i.name}<br/><span style={{ fontSize: '10px', color: '#555' }}>{i.variantName}</span></td>
                       <td style={{ padding: '6px 0', borderBottom: '1px dotted #ccc', textAlign: 'center' }}>{i.qty}</td>
-                      <td style={{ padding: '6px 0', borderBottom: '1px dotted #ccc', textAlign: 'right' }}>{formatCurrency(i.total)}</td>
+                      <td style={{ padding: '6px 0', borderBottom: '1px dotted #ccc', textAlign: 'right' }}>{i.total.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div style={{ borderTop: '1.5px dashed #000', paddingTop: '12px', marginTop: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '14px' }}>
-                  <span>Total Bill:</span> <span>{formatCurrency(viewingReceipt.total)}</span>
+              <div style={{ borderTop: '1.5px dashed #000', paddingTop: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 700 }}>
+                  <span>Grand Total:</span><span>₹{viewingReceipt.total.toFixed(2)}</span>
                 </div>
-                {viewingReceipt.split && viewingReceipt.split.udhaar > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '14px', marginTop: '8px', color: '#dc2626' }}>
-                    <span>Pending Udhaar:</span> <span>{formatCurrency(viewingReceipt.split.udhaar)}</span>
+                {viewingReceipt.split && viewingReceipt.split.udhaar > 0 && !viewingReceipt.isPaid && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#ef4444', marginTop: '4px' }}>
+                    <span>PENDING UDHAAR:</span><span>₹{viewingReceipt.split.udhaar}</span>
                   </div>
                 )}
               </div>
@@ -327,16 +504,6 @@ export const CustomerPortal: React.FC = () => {
         </div>
       )}
 
-      {/* REUSED VARIANT MODAL FOR ORDERING */}
-      <VariantModal 
-        isOpen={isVariantModalOpen}
-        onClose={() => setIsVariantModalOpen(false)}
-        product={selectedProduct}
-        onConfirm={(product, variantId, qty) => {
-          handleAddToCart(product, variantId, qty); 
-          setIsVariantModalOpen(false);
-        }}
-      />
     </div>
   );
 };
