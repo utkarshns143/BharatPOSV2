@@ -1,39 +1,63 @@
 import React from 'react';
-import type { Product } from '../../types';
+import type { Product, ProductVariant } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
-import { Card } from '../ui/Card';
-import { Button } from '../ui/Button';
 
 interface ProductCardProps {
   product: Product;
-  actionLabel: string;
+  actionLabel?: string; // Optional, kept for compatibility
   onActionClick: (product: Product) => void;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({ product, actionLabel, onActionClick }) => {
-  // We grab the first variant to display the base price
-  const baseVariant = product.variants[0];
+export const ProductCard: React.FC<ProductCardProps> = ({ product, onActionClick }) => {
+  const vCount = product.variants.length;
+  const maxToShow = 2;
+  const variantsToShow = product.variants.slice(0, maxToShow);
+  const vFirst = product.variants[0];
+
+  if (!vFirst) return null;
+
+  // Exact JS Loose Logic: Calculate Total Display Stock
+  let totalBase = 0;
+  const unit = vFirst.baseUnit || 'pcs';
+  product.variants.forEach(v => {
+    const bq = Number(v.baseQty) || 1;
+    totalBase += (Number(v.stock) || 0) * (product.isLoose ? bq : 1);
+  });
+  
+  // Format stock display (e.g., 2.5 kg vs 5 in stock)
+  const displayStock = product.isLoose ? `${totalBase.toFixed(totalBase % 1 === 0 ? 0 : 2)} ${unit}` : `${totalBase} in stock`;
+
+  // Exact JS Loose Logic: Calculate Unit Price
+  const getUnitPrice = (v: ProductVariant) => product.isLoose ? v.price / (Number(v.baseQty) || 1) : v.price;
 
   return (
-    <Card padding="1rem" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <h3 style={{ fontSize: '1.1rem', margin: 0 }}>{product.name}</h3>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>
-        {product.category}
-      </p>
+    <div className="prod-card" onClick={() => onActionClick(product)}>
+      <button className="pc-info-btn" onClick={(e) => { e.stopPropagation(); /* Hook up info modal here if needed later */ }}>
+        <i className="fa-solid fa-circle-info"></i>
+      </button>
       
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '1rem' }}>
-        <strong style={{ fontSize: '1.2rem', color: 'var(--success)' }}>
-          {baseVariant ? formatCurrency(baseVariant.price) : 'N/A'}
-        </strong>
-        
-        <Button 
-          variant="primary" 
-          onClick={() => onActionClick(product)}
-          style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
-        >
-          {actionLabel}
-        </Button>
+      {vCount > 1 && <div className="pc-badge">{vCount} Types</div>}
+      {product.isLoose && <div className="pc-badge-loose" style={{ right: vCount > 1 ? '55px' : '0' }}>Loose / Wt</div>}
+      
+      <div className="pc-cat">{product.category || 'Gen'}</div>
+      <div className="pc-name">{product.name}</div>
+      
+      <div className="pc-variant-prices">
+        {variantsToShow.map(v => (
+          <span key={v.id} className="pc-variant-item">
+            {v.quantity}: {formatCurrency(getUnitPrice(v))}/{v.baseUnit || 'pcs'}
+          </span>
+        ))}
+        {vCount > maxToShow && (
+          <span className="pc-variant-item" style={{ background: 'transparent', color: 'var(--text-muted)', padding: 0, fontSize: '10px', fontWeight: 700 }}>
+            +{vCount - maxToShow} more...
+          </span>
+        )}
       </div>
-    </Card>
+      
+      <div className="pc-bottom">
+        <span className="pc-stock">{displayStock}</span>
+      </div>
+    </div>
   );
 };

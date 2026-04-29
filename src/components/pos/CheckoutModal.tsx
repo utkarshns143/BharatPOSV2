@@ -1,131 +1,86 @@
 import React, { useState, useEffect } from 'react';
-import { Button } from '../ui/Button';
-import { Card } from '../ui/Card';
 import { formatCurrency } from '../../utils/formatters';
 
 interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   cartTotal: number;
-  onConfirm: (paymentSplit: { cash: number; online: number; udhaar: number }) => void;
+  customerPhone: string;
+  onConfirm: (method: string, split?: { cash: number, online: number, udhaar: number }) => void;
 }
 
-export const CheckoutModal: React.FC<CheckoutModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  cartTotal, 
-  onConfirm 
-}) => {
-  // Local state for the inputs
-  const [cash, setCash] = useState<number | ''>('');
-  const [online, setOnline] = useState<number | ''>('');
-  
-  // Auto-calculate Udhaar (Whatever is left unpaid is Udhaar)
-  const currentCash = Number(cash) || 0;
-  const currentOnline = Number(online) || 0;
-  const remaining = Math.max(0, cartTotal - (currentCash + currentOnline));
+export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, cartTotal, customerPhone, onConfirm }) => {
+  const [cash, setCash] = useState<string>('');
+  const [online, setOnline] = useState<string>('');
+  const [udhaar, setUdhaar] = useState<string>('');
 
-  // Reset inputs when the modal opens
+  // Auto-calculate Udhaar when Cash or Online changes
   useEffect(() => {
     if (isOpen) {
-      setCash('');
+      setCash(String(cartTotal));
       setOnline('');
+      setUdhaar('0');
     }
-  }, [isOpen]);
+  }, [isOpen, cartTotal]);
 
-  if (!isOpen) return null;
+  const handleCashChange = (val: string) => {
+    const c = Number(val) || 0;
+    setCash(val);
+    setOnline(''); // reset online when manually typing cash
+    setUdhaar(String(Math.max(0, cartTotal - c)));
+  };
 
-  const handleQuickPay = (method: 'cash' | 'online') => {
-    if (method === 'cash') {
-      setCash(cartTotal);
-      setOnline(0);
-    } else {
-      setOnline(cartTotal);
-      setCash(0);
-    }
+  const handleOnlineChange = (val: string) => {
+    const c = Number(cash) || 0;
+    const o = Number(val) || 0;
+    setOnline(val);
+    setUdhaar(String(Math.max(0, cartTotal - c - o)));
   };
 
   const handleConfirm = () => {
-    onConfirm({
-      cash: currentCash,
-      online: currentOnline,
-      udhaar: remaining,
-    });
+    const totalInput = (Number(cash) || 0) + (Number(online) || 0) + (Number(udhaar) || 0);
+    if (Math.abs(totalInput - cartTotal) > 0.01) return alert("Amounts must equal Grand Total");
+    if ((Number(udhaar) || 0) > 0 && customerPhone.length !== 10) return alert("Customer 10-digit mobile required for Udhaar");
+    
+    onConfirm('Partial', { cash: Number(cash) || 0, online: Number(online) || 0, udhaar: Number(udhaar) || 0 });
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 9999, // Ensure it sits on top of everything
-    }}>
-      <Card padding="2rem" style={{ width: '100%', maxWidth: '400px', margin: '1rem' }}>
+    <div className="modal-overlay" style={{ zIndex: 10000 }}>
+      <div className="modal-box" style={{ background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: '400px', padding: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}><i className="fa-solid fa-calculator" style={{ color: 'var(--primary)' }}></i> Partial / Mix Payment</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-muted)' }}>✕</button>
+        </div>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h2 style={{ margin: 0 }}>Checkout</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-muted)' }}>✕</button>
+        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Grand Total To Pay</div>
+            <div style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a', fontFamily: "'JetBrains Mono', monospace" }}>{formatCurrency(cartTotal)}</div>
         </div>
 
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Grand Total</div>
-          <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--text-main)', fontFamily: 'monospace' }}>
-            {formatCurrency(cartTotal)}
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '25px' }}>
+            <div style={{ position: 'relative' }}>
+              <input type="number" value={cash} onChange={e => handleCashChange(e.target.value)} style={{ width: '100%', padding: '14px', fontSize: '18px', fontWeight: 800, color: 'var(--success)', borderRadius: '8px', border: '1.5px solid var(--border)', outline: 'none', boxSizing: 'border-box' }} placeholder=" " />
+              <label style={{ position: 'absolute', top: '14px', left: '16px', fontSize: '13px', color: 'var(--text-muted)', fontWeight: 600, pointerEvents: 'none' }}><i className="fa-solid fa-money-bill-wave"></i> Cash Amount</label>
+            </div>
+            
+            <div style={{ position: 'relative' }}>
+              <input type="number" value={online} onChange={e => handleOnlineChange(e.target.value)} style={{ width: '100%', padding: '14px', fontSize: '18px', fontWeight: 800, color: 'var(--purple)', borderRadius: '8px', border: '1.5px solid var(--border)', outline: 'none', boxSizing: 'border-box' }} placeholder=" " />
+              <label style={{ position: 'absolute', top: '14px', left: '16px', fontSize: '13px', color: 'var(--text-muted)', fontWeight: 600, pointerEvents: 'none' }}><i className="fa-solid fa-qrcode"></i> Online Amount</label>
+            </div>
+
+            <div style={{ position: 'relative' }}>
+              <input type="number" value={udhaar} readOnly style={{ width: '100%', padding: '14px', fontSize: '18px', fontWeight: 800, color: 'var(--danger)', borderRadius: '8px', border: '1.5px solid var(--border)', outline: 'none', background: '#f8fafc', boxSizing: 'border-box' }} placeholder=" " />
+              <label style={{ position: 'absolute', top: '14px', left: '16px', fontSize: '13px', color: 'var(--text-muted)', fontWeight: 600, pointerEvents: 'none' }}><i className="fa-solid fa-book-open"></i> Udhaar Amount</label>
+            </div>
         </div>
 
-        {/* Quick Actions */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-          <Button variant="outline" onClick={() => handleQuickPay('cash')}>
-            Full Cash
-          </Button>
-          <Button variant="outline" onClick={() => handleQuickPay('online')}>
-            Full Online
-          </Button>
-        </div>
-
-        {/* Custom Split Inputs */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2rem' }}>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--success)' }}>Cash Paid</label>
-            <input 
-              type="number" 
-              value={cash} 
-              onChange={(e) => setCash(e.target.value ? Number(e.target.value) : '')}
-              placeholder="₹ 0.00"
-              style={{ padding: '0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', fontSize: '1.2rem', fontWeight: 'bold' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--primary)' }}>Online Paid</label>
-            <input 
-              type="number" 
-              value={online} 
-              onChange={(e) => setOnline(e.target.value ? Number(e.target.value) : '')}
-              placeholder="₹ 0.00"
-              style={{ padding: '0.75rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', fontSize: '1.2rem', fontWeight: 'bold' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', backgroundColor: '#fee2e2', borderRadius: 'var(--radius)' }}>
-            <span style={{ fontWeight: 'bold', color: 'var(--danger)' }}>Pending Udhaar:</span>
-            <span style={{ fontWeight: 'bold', color: 'var(--danger)', fontSize: '1.2rem' }}>
-              {formatCurrency(remaining)}
-            </span>
-          </div>
-
-        </div>
-
-        <Button variant="primary" fullWidth onClick={handleConfirm} style={{ padding: '1rem', fontSize: '1.1rem' }}>
-          Confirm Payment
-        </Button>
-
-      </Card>
+        <button onClick={handleConfirm} style={{ width: '100%', padding: '16px', borderRadius: '8px', background: 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', cursor: 'pointer', fontSize: '14px' }}>
+          <i className="fa-solid fa-check-circle"></i> Save Mix Payment
+        </button>
+      </div>
     </div>
   );
 };

@@ -56,7 +56,6 @@ export interface Product {
   _branchName?: string;
 }
 
-// --- BILLING & SALES SCHEMAS ---
 export interface CartItem {
   prodId: string;
   variantId: string;
@@ -68,6 +67,10 @@ export interface CartItem {
   isLoose: boolean;
   unitLabel?: string;
   total: number;
+  // --- ADD THESE MISSING PROPERTIES ---
+  gstRate?: number;
+  priceType?: 'inclusive' | 'exclusive';
+  isService?: boolean;
 }
 
 export interface SplitPayment {
