@@ -438,10 +438,12 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onCancel 
                             </label>
                           </div>
                         </div>
-
-                        <div className="form-group" style={{ marginTop: '12px', marginBottom: 0 }}>
+<div className="form-group" style={{ marginTop: '12px', marginBottom: 0 }}>
                           <input type="number" step="0.001" className="form-input b-stock" placeholder=" " value={b.stock} onChange={e => updateBrand(t.id, b.id, 'stock', e.target.value ? Number(e.target.value) : '')} required />
-                          <label className="floating-label" style={{ color: 'var(--primary)', fontWeight: 700 }}>Stock</label>
+                          {/* 🛑 FIX: Dynamic Stock Label based on Loose vs Packed */}
+                          <label className="floating-label" style={{ color: 'var(--primary)', fontWeight: 700 }}>
+                            {isLoose ? `Total Stock (${b.baseUnit || 'units'})` : 'Total Stock (Count)'}
+                          </label>
                         </div>
 
                         <div className="adv-only-field">
@@ -464,11 +466,19 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onCancel 
                           </div>
                         </div>
 
+                       {/* 🛑 FIX: Positioned the Remove Button safely inside the card */}
                         {t.brands.length > 1 && (
-                          <button type="button" className="btn-remove-brand" onClick={() => handleRemoveBrand(t.id, b.id)} style={{ position: 'absolute', top: '16px', right: 0, background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '16px', padding: '5px' }}>
+                          <button 
+                            type="button" 
+                            className="btn-remove-brand" 
+                            onClick={() => handleRemoveBrand(t.id, b.id)} 
+                            style={{ position: 'absolute', top: '10px', right: '10px', background: '#fee2e2', border: '1px solid #fca5a5', color: 'var(--danger)', cursor: 'pointer', fontSize: '14px', width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: '0.2s' }}
+                            title="Remove Variant"
+                          >
                             <i className="fa-solid fa-trash"></i>
                           </button>
                         )}
+                        
                       </div>
                     );
                   })}

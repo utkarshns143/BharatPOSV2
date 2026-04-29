@@ -373,8 +373,7 @@ export const Inventory: React.FC = () => {
                                </div>
 
                     <div style={{ fontSize: '12px', fontWeight: 800, color: isLow ? 'var(--danger)' : 'var(--text-main)', background: isLow ? 'var(--danger-soft)' : 'white', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${isLow ? 'rgba(220,38,38,0.2)' : 'var(--border)'}` }}>
-                      <i className={`fa-solid ${isLow ? 'fa-triangle-exclamation' : 'fa-circle-check'}`}></i> {totalStock}
-                    </div>
+<i className={`fa-solid ${isLow ? 'fa-triangle-exclamation' : 'fa-circle-check'}`}></i> {totalStock} {p.isLoose ? vFirst.baseUnit : 'pcs'}                    </div>
                   </div>
 
                 </div>
@@ -445,7 +444,9 @@ export const Inventory: React.FC = () => {
     ? `₹${(v.price / (Number(v.baseQty) || 1)).toFixed(2)} / ${v.baseUnit || 'unit'}` 
     : `₹${v.price}`}
 </div>
-                            <div style={{ fontSize: '11px', color: v.stock <= (Number(detailProduct.reorderPoint) || 5) ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 700 }}>Stock: {v.stock}</div>
+                            <div style={{ fontSize: '11px', color: v.stock <= (Number(detailProduct.reorderPoint) || 5) ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 700 }}>
+  Stock: {v.stock} {detailProduct.isLoose ? v.baseUnit : 'pcs'}
+</div>
                           </div>
                         </div>
                         {(v.barcode || v.costPrice || v.expiryDate) && (
