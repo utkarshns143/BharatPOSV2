@@ -1,9 +1,9 @@
+// File: src/pages/customer/tabs/KhojTab.tsx
+
 import React, { useEffect, useRef, useState } from 'react';
 import { useCustomerStore } from '../../../store/useCustomerStore';
 import { collectionGroup, getDocs } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
-
-declare const L: any;
 
 interface KhojTabProps {
   isActive: boolean;
@@ -11,129 +11,257 @@ interface KhojTabProps {
 
 export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
   const { shopsMap } = useCustomerStore();
+  
+  // Map Refs
+  const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any>(null);
   const routingRef = useRef<any>(null);
+  
+  // State
   const [mapDistance, setMapDistance] = useState<string | null>(null);
   const [khojSearch, setKhojSearch] = useState('');
-useEffect(() => {
-    if (isActive && !mapRef.current) {
-      // 🛑 CRITICAL FIX: Wait for Leaflet to download before drawing the map!
-      const initMap = () => {
-        if (typeof (window as any).L === 'undefined') {
-          setTimeout(initMap, 100); // Check again in 100ms
-          return;
-        }
+  const [isSearching, setIsSearching] = useState(false);
+  const [userLoc, setUserLoc] = useState<[number, number] | null>(null);
 
-        const L = (window as any).L;
-        const initialLoc = [20.5937, 78.9629];
-        mapRef.current = L.map('leafletMap', { zoomControl: false }).setView(initialLoc, 5);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(mapRef.current);
-        markersRef.current = L.layerGroup().addTo(mapRef.current);
+  // 1. INITIALIZE MAP (Only Once)
+  useEffect(() => {
+    const initMap = () => {
+      const L = (window as any).L;
+      
+      // Wait for Leaflet to download
+      if (typeof L === 'undefined') {
+        setTimeout(initMap, 100);
+        return;
+      }
 
-        // Render base shop dots safely
-        Object.values(shopsMap || {}).forEach(shop => {
-          if (shop.lat && shop.lng) {
-            const dotIcon = L.divIcon({ className: 'custom-div-icon', iconSize: [14, 14] });
-            L.marker([shop.lat, shop.lng], { icon: dotIcon }).addTo(markersRef.current);
-          }
-        });
+      // Prevent "Map already initialized" error
+      if (mapRef.current || !mapContainerRef.current) return;
 
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(pos => {
-            const loc = [pos.coords.latitude, pos.coords.longitude];
+      // Default center (India)
+      const initialLoc: [number, number] = [20.5937, 78.9629];
+      
+      // Create Map
+      mapRef.current = L.map(mapContainerRef.current, { zoomControl: false }).setView(initialLoc, 5);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(mapRef.current);
+      
+      // Create Marker Layer Group
+      markersRef.current = L.layerGroup().addTo(mapRef.current);
+
+      // Draw Base Shops
+      drawBaseShops(L);
+
+      // Get Actual User Location
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const loc: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+            setUserLoc(loc);
             mapRef.current.setView(loc, 13);
-            L.circleMarker(loc, { radius: 8, fillColor: '#3b82f6', color: '#fff', weight: 3, opacity: 1, fillOpacity: 1 }).addTo(mapRef.current).bindPopup("You are here");
             
-            let minD = Infinity; let nearest: any = null;
-            Object.values(shopsMap || {}).forEach(s => {
-              if (s.lat && s.lng) {
-                const d = Math.sqrt(Math.pow(s.lat - loc[0], 2) + Math.pow(s.lng - loc[1], 2));
-                if (d < minD) { minD = d; nearest = s; }
-              }
-            });
+            // User Location Dot
+            L.circleMarker(loc, { radius: 8, fillColor: '#3b82f6', color: '#fff', weight: 3, opacity: 1, fillOpacity: 1 })
+             .addTo(mapRef.current)
+             .bindPopup("You are here");
+          },
+          (err) => console.warn("Location access denied or failed.", err),
+          { timeout: 10000 }
+        );
+      }
 
-            if (nearest) {
-              const pinIcon = L.divIcon({ className: 'matched-pin', html: '<i class="fa-solid fa-location-dot pin-icon"></i>', iconSize: [38, 38], iconAnchor: [19, 38], popupAnchor: [0, -38] });
-              L.marker([nearest.lat, nearest.lng], { icon: pinIcon }).addTo(markersRef.current)
-                .bindPopup(`<div style="text-align:center;"><b>Nearest Shop: ${nearest.name}</b><br><button onclick="window.drawRoute(${nearest.lat}, ${nearest.lng}, ${loc[0]}, ${loc[1]})" style="background:#6366f1;color:white;border:none;padding:5px 10px;border-radius:5px;margin-top:5px;cursor:pointer;">Get Route</button></div>`).openPopup();
-            }
-          });
+      // Safe Event Delegation for Routing (Catches clicks inside popups)
+      mapRef.current.on('popupopen', () => {
+        const routeBtn = document.getElementById('khoj-route-btn');
+        if (routeBtn) {
+          routeBtn.onclick = () => {
+            const lat = Number(routeBtn.getAttribute('data-lat'));
+            const lng = Number(routeBtn.getAttribute('data-lng'));
+            drawRoute(lat, lng);
+            mapRef.current.closePopup();
+          };
         }
+      });
+    };
 
-        (window as any).drawRoute = (tLat: number, tLng: number, uLat: number, uLng: number) => {
-          if (routingRef.current) mapRef.current.removeControl(routingRef.current);
-          
-          // Safety check: ensure Routing machine loaded
-          if (typeof L.Routing === 'undefined') {
-            alert("Routing library is still loading. Please try again in a second.");
-            return;
-          }
+    initMap();
 
-          routingRef.current = L.Routing.control({
-            waypoints: [L.latLng(uLat, uLng), L.latLng(tLat, tLng)],
-            routeWhileDragging: false, addWaypoints: false, show: false,
-            lineOptions: { styles: [{ color: '#6366f1', opacity: 0.8, weight: 6 }] }
-          }).addTo(mapRef.current);
+    // Cleanup on unmount
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+  }, []); // Run only once on mount
 
-          routingRef.current.on('routesfound', (e: any) => {
-            setMapDistance(`${(e.routes[0].summary.totalDistance / 1000).toFixed(2)} km`);
-          });
-        };
-      };
-
-      // Start the initialization loop
-      initMap();
+  // 2. FIX GREY MAP BUG (Resize when tab becomes visible)
+  useEffect(() => {
+    if (isActive && mapRef.current) {
+      setTimeout(() => {
+        mapRef.current.invalidateSize();
+      }, 100);
     }
-  }, [isActive, shopsMap]);
+  }, [isActive]);
 
-  const handleKhojSearch = async () => {
-    if (!khojSearch) return;
-    markersRef.current.clearLayers();
-    
+  // Helper: Draw all shops as basic dots
+  const drawBaseShops = (L: any) => {
+    if (!markersRef.current) return;
     Object.values(shopsMap || {}).forEach(shop => {
-      if (shop.lat && shop.lng) L.marker([shop.lat, shop.lng], { icon: L.divIcon({ className: 'custom-div-icon', iconSize: [14, 14] }) }).addTo(markersRef.current);
+      if (shop.lat && shop.lng) {
+        const dotIcon = L.divIcon({ className: 'custom-div-icon', iconSize: [14, 14] });
+        L.marker([shop.lat, shop.lng], { icon: dotIcon }).addTo(markersRef.current);
+      }
     });
+  };
+
+  // Helper: Draw Route Line
+  const drawRoute = (targetLat: number, targetLng: number) => {
+    const L = (window as any).L;
+    if (!L || !L.Routing) return alert("Routing engine is still loading...");
+    if (!userLoc) return alert("Please enable GPS location to get directions.");
+
+    // Clear old route
+    if (routingRef.current) {
+      mapRef.current.removeControl(routingRef.current);
+    }
+
+    routingRef.current = L.Routing.control({
+      waypoints: [L.latLng(userLoc[0], userLoc[1]), L.latLng(targetLat, targetLng)],
+      routeWhileDragging: false, 
+      addWaypoints: false, 
+      show: false, // Hides the bulky text directions
+      lineOptions: { styles: [{ color: '#6366f1', opacity: 0.8, weight: 6 }] }
+    }).addTo(mapRef.current);
+
+    routingRef.current.on('routesfound', (e: any) => {
+      setMapDistance(`${(e.routes[0].summary.totalDistance / 1000).toFixed(2)} km`);
+    });
+  };
+
+  const clearRoute = () => {
+    if (routingRef.current && mapRef.current) {
+      mapRef.current.removeControl(routingRef.current);
+      routingRef.current = null;
+      setMapDistance(null);
+    }
+    if (userLoc && mapRef.current) {
+      mapRef.current.setView(userLoc, 13);
+    }
+  };
+
+  // 3. SEARCH LOGIC
+  const handleKhojSearch = async () => {
+    if (!khojSearch.trim()) {
+      // If search is empty, just reset the map
+      markersRef.current?.clearLayers();
+      drawBaseShops((window as any).L);
+      return;
+    }
+
+    setIsSearching(true);
+    const L = (window as any).L;
+    markersRef.current?.clearLayers();
+    drawBaseShops(L); // Keep base dots
 
     try {
-      const q = khojSearch.toLowerCase();
+      const q = khojSearch.toLowerCase().trim();
       const prodSnap = await getDocs(collectionGroup(db, 'products'));
-      const foundShops: Record<string, any> = {};
+      const foundShops: Record<string, { shop: any, matches: number, minPrice: number }> = {};
 
       prodSnap.forEach(d => {
         const p = d.data();
         const sId = d.ref.parent.parent?.id;
+        
         if (p.name?.toLowerCase().includes(q) && sId && shopsMap[sId]) {
-          if (!foundShops[sId]) foundShops[sId] = { shop: shopsMap[sId], products: [] };
-          foundShops[sId].products.push(p);
+          const price = p.variants?.[0]?.price || 0;
+          if (!foundShops[sId]) {
+            foundShops[sId] = { shop: shopsMap[sId], matches: 1, minPrice: price };
+          } else {
+            foundShops[sId].matches += 1;
+            if (price < foundShops[sId].minPrice) foundShops[sId].minPrice = price;
+          }
         }
       });
 
-      if (Object.keys(foundShops).length > 0) {
-        const pinIcon = L.divIcon({ className: 'matched-pin', html: '<i class="fa-solid fa-location-dot pin-icon"></i>', iconSize: [38, 38], iconAnchor: [19, 38], popupAnchor: [0, -38] });
-        Object.values(foundShops).forEach(s => {
-          L.marker([s.shop.lat, s.shop.lng], { icon: pinIcon }).addTo(markersRef.current)
-            .bindPopup(`<div style="text-align:center;"><b>${s.shop.name}</b><br>Has ${s.products.length} matches.</div>`);
+      const foundKeys = Object.keys(foundShops);
+
+      if (foundKeys.length > 0) {
+        const pinIcon = L.divIcon({ 
+          className: 'matched-pin', 
+          html: '<div style="font-size:32px; color:#f59e0b; filter:drop-shadow(0 4px 4px rgba(0,0,0,0.3));">📍</div>', 
+          iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -32] 
         });
-        mapRef.current.fitBounds(new L.featureGroup(markersRef.current.getLayers()).getBounds().pad(0.1));
+
+        foundKeys.forEach(key => {
+          const { shop, matches, minPrice } = foundShops[key];
+          
+          const popupHtml = `
+            <div style="text-align:center; min-width:140px; font-family: 'Plus Jakarta Sans', sans-serif;">
+              <div style="font-weight:800; font-size:15px; color:#1e293b; margin-bottom:4px;">${shop.name}</div>
+              <div style="font-size:12px; color:#64748b; font-weight:600; margin-bottom:8px;">${matches} items match</div>
+              <div style="font-size:14px; color:#10b981; font-weight:800; margin-bottom:12px;">Starts ₹${minPrice}</div>
+              <button id="khoj-route-btn" data-lat="${shop.lat}" data-lng="${shop.lng}" style="width:100%; background:#6366f1; color:white; border:none; padding:8px; border-radius:8px; font-weight:800; cursor:pointer;">
+                Get Route
+              </button>
+            </div>
+          `;
+
+          L.marker([shop.lat, shop.lng], { icon: pinIcon }).addTo(markersRef.current).bindPopup(popupHtml);
+        });
+
+        // Zoom to fit all found shops
+        const group = new L.featureGroup(markersRef.current.getLayers());
+        mapRef.current.fitBounds(group.getBounds().pad(0.1));
       } else {
         alert("No shops found selling this item nearby.");
       }
     } catch (e) {
       console.error(e);
       alert("Search failed. Ensure internet connection.");
+    } finally {
+      setIsSearching(false);
     }
   };
 
   return (
-    <main className={`tab-view ${isActive ? 'active' : ''}`} style={{ padding: 0 }}>
-      <div id="leafletMap" style={{ width: '100%', height: 'calc(100vh - 140px)', borderRadius: '24px 24px 0 0' }}></div>
-      <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px', zIndex: 1000, background: 'white', padding: '14px 20px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '12px', border: '1.5px solid var(--brand-primary)' }}>
-          <i className="fa-solid fa-radar" style={{ color: 'var(--brand-primary)' }}></i>
-          <input type="text" placeholder="Find 'Atta' nearby..." value={khojSearch} onChange={e => setKhojSearch(e.target.value)} style={{ border: 'none', outline: 'none', width: '100%', fontSize: '14px', fontWeight: 600 }} />
-          <button onClick={handleKhojSearch} style={{ background: 'var(--brand-primary)', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '12px', fontWeight: 800 }}><i className="fa-solid fa-magnifying-glass"></i></button>
+    <main className={`tab-view ${isActive ? 'active' : ''}`} style={{ padding: 0, position: 'relative' }}>
+      
+      {/* The Map Container */}
+      <div ref={mapContainerRef} style={{ width: '100%', height: 'calc(100vh - 140px)', borderRadius: '24px 24px 0 0', zIndex: 1 }}></div>
+      
+      {/* Floating Search Bar */}
+      <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px', zIndex: 1000, background: 'white', padding: '10px 16px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '12px', border: '1.5px solid var(--brand-primary)' }}>
+          <i className="fa-solid fa-radar" style={{ color: 'var(--brand-primary)', fontSize: '18px' }}></i>
+          <input 
+            type="text" 
+            placeholder="Find 'Atta' nearby..." 
+            value={khojSearch} 
+            onChange={e => setKhojSearch(e.target.value)} 
+            onKeyDown={e => e.key === 'Enter' && handleKhojSearch()}
+            style={{ border: 'none', outline: 'none', width: '100%', fontSize: '15px', fontWeight: 600 }} 
+          />
+          <button onClick={handleKhojSearch} disabled={isSearching} style={{ background: 'var(--brand-primary)', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer', transition: '0.2s' }}>
+            {isSearching ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-magnifying-glass"></i>}
+          </button>
       </div>
-      {mapDistance && <div style={{ position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', background: 'var(--brand-primary)', color: 'white', padding: '10px 20px', borderRadius: '20px', fontWeight: 800, fontSize: '12px', zIndex: 2000, boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}><i className="fa-solid fa-route"></i> Distance: {mapDistance}</div>}
+
+      {/* Floating Route Info & Controls */}
+      <div style={{ position: 'absolute', top: '90px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
+        
+        {/* Recenter Button */}
+        <button onClick={clearRoute} style={{ background: 'white', color: 'var(--text-main)', border: '1px solid var(--border)', padding: '10px', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }} title="Recenter">
+          <i className="fa-solid fa-location-crosshairs"></i>
+        </button>
+
+        {/* Distance Badge */}
+        {mapDistance && (
+          <div style={{ background: 'var(--brand-primary)', color: 'white', padding: '10px 20px', borderRadius: '20px', fontWeight: 800, fontSize: '13px', boxShadow: '0 4px 15px rgba(99, 102, 241, 0.4)', display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.3s' }}>
+            <i className="fa-solid fa-route"></i> {mapDistance}
+            <button onClick={clearRoute} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginLeft: '4px' }}>✕</button>
+          </div>
+        )}
+      </div>
+
     </main>
   );
 };
