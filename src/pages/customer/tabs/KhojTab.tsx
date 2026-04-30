@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useCustomerStore } from '../../../store/useCustomerStore';
 import { collectionGroup, getDocs } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
+import { searchAddress, getAddressFromCoords } from '../../../utils/geocoding';
 
 interface KhojTabProps {
   isActive: boolean;
@@ -18,11 +19,17 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
   const markersRef = useRef<any>(null);
   const routingRef = useRef<any>(null);
   
-  // State
+  // General Map State
   const [mapDistance, setMapDistance] = useState<string | null>(null);
+  const [userLoc, setUserLoc] = useState<[number, number] | null>(null);
+  
+  // Geocoding Search State
+  const [locationInput, setLocationInput] = useState('');
+  const [isLocating, setIsLocating] = useState(false);
+
+  // Khoj Product Search State
   const [khojSearch, setKhojSearch] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const [userLoc, setUserLoc] = useState<[number, number] | null>(null);
 
   // 1. INITIALIZE MAP
   useEffect(() => {
@@ -44,9 +51,9 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(mapRef.current);
       markersRef.current = L.layerGroup().addTo(mapRef.current);
 
-      // Draw all base shops with strict GPS checking
       drawBaseShops(L);
 
+      // Get GPS Location on load
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -75,6 +82,26 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
           };
         }
       });
+
+      // 🛑 THE PRO-TIP: Click map to Reverse Geocode Address
+      mapRef.current.on('click', async (e: any) => {
+        const { lat, lng } = e.latlng;
+        setUserLoc([lat, lng]); // Move their invisible GPS point
+        
+        // Draw a new pin for visual feedback
+        L.circleMarker([lat, lng], { radius: 8, fillColor: '#10b981', color: '#fff', weight: 3, opacity: 1, fillOpacity: 1 })
+          .addTo(mapRef.current)
+          .bindPopup("Delivery Location")
+          .openPopup();
+
+        // Ask Nominatim what the address is at that click!
+        const addressName = await getAddressFromCoords(lat, lng);
+        if (addressName) {
+          setLocationInput(addressName); // Fill the search bar with the real street name
+        } else {
+          setLocationInput(`${lat.toFixed(4)}, ${lng.toFixed(4)}`); // Fallback if API is slow
+        }
+      });
     };
 
     initMap();
@@ -85,9 +112,9 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
         mapRef.current = null;
       }
     };
-  }, []); 
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fix Map Grey Box Bug
+  // Fix Map Grey Box Bug when switching tabs
   useEffect(() => {
     if (isActive && mapRef.current) {
       setTimeout(() => {
@@ -96,12 +123,11 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
     }
   }, [isActive]);
 
-  // --- HELPER: Draw Base Shops (Now Interactable!) ---
+  // --- HELPER: Draw Base Shops ---
   const drawBaseShops = (L: any) => {
     if (!markersRef.current) return;
     
     Object.values(shopsMap || {}).forEach((shop: any) => {
-      // 🛑 STRICT CHECK: Only draw if lat/lng are valid numbers!
       if (typeof shop.lat === 'number' && typeof shop.lng === 'number' && !isNaN(shop.lat)) {
         const dotIcon = L.divIcon({ className: 'custom-div-icon', iconSize: [14, 14] });
         
@@ -116,7 +142,7 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
 
         L.marker([shop.lat, shop.lng], { icon: dotIcon })
          .addTo(markersRef.current)
-         .bindPopup(popupHtml); // Makes the dot clickable!
+         .bindPopup(popupHtml); 
       }
     });
   };
@@ -125,7 +151,7 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
   const drawRoute = (targetLat: number, targetLng: number) => {
     const L = (window as any).L;
     if (!L || !L.Routing) return alert("Routing engine is loading...");
-    if (!userLoc) return alert("Please enable GPS location for directions.");
+    if (!userLoc) return alert("Please enable GPS location or tap the map to set a location.");
 
     if (routingRef.current) {
       mapRef.current.removeControl(routingRef.current);
@@ -151,7 +177,29 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
     if (userLoc && mapRef.current) mapRef.current.setView(userLoc, 13);
   };
 
-  // --- SEARCH LOGIC ---
+  // --- SEARCH LOGIC 1: Location Geocoding ---
+  const handleLocationSearch = async () => {
+    if (!locationInput.trim()) return;
+    setIsLocating(true);
+    
+    const coords = await searchAddress(locationInput);
+    
+    if (coords && mapRef.current) {
+      setUserLoc(coords);
+      mapRef.current.flyTo(coords, 14, { animate: true, duration: 1.5 });
+      
+      const L = (window as any).L;
+      L.circleMarker(coords, { radius: 8, fillColor: '#10b981', color: '#fff', weight: 3, opacity: 1, fillOpacity: 1 })
+        .addTo(mapRef.current)
+        .bindPopup(`<b>Delivery Location</b><br/>${locationInput}`)
+        .openPopup();
+    } else {
+      alert("Could not find that address. Try being more specific (e.g., 'Sector 62, Noida').");
+    }
+    setIsLocating(false);
+  };
+
+  // --- SEARCH LOGIC 2: Khoj Products ---
   const handleKhojSearch = async () => {
     const L = (window as any).L;
     if (!khojSearch.trim()) {
@@ -174,7 +222,6 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
         const sId = d.ref.parent.parent?.id;
         const shop = sId ? shopsMap[sId] : null;
         
-        // 🛑 STRICT CHECK: Shop MUST have valid numbers to be included in search!
         if (p.name?.toLowerCase().includes(q) && sId && shop && typeof shop.lat === 'number') {
           const price = p.variants?.[0]?.price || 0;
           if (!foundShops[sId]) {
@@ -227,15 +274,43 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
     <main className={`tab-view ${isActive ? 'active' : ''}`} style={{ padding: 0, position: 'relative', display: isActive ? 'block' : 'none' }}>
       <div ref={mapContainerRef} style={{ width: '100%', height: 'calc(100vh - 140px)', borderRadius: '24px 24px 0 0', zIndex: 1 }}></div>
       
-      <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px', zIndex: 1000, background: 'white', padding: '10px 16px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '12px', border: '1.5px solid var(--brand-primary)' }}>
-          <i className="fa-solid fa-radar" style={{ color: 'var(--brand-primary)', fontSize: '18px' }}></i>
-          <input type="text" placeholder="Find 'Atta' nearby..." value={khojSearch} onChange={e => setKhojSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleKhojSearch()} style={{ border: 'none', outline: 'none', width: '100%', fontSize: '15px', fontWeight: 600 }} />
-          <button onClick={handleKhojSearch} disabled={isSearching} style={{ background: 'var(--brand-primary)', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer', transition: '0.2s' }}>
-            {isSearching ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-magnifying-glass"></i>}
-          </button>
+      {/* Double Search Bar UI */}
+      <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          
+          {/* Geocoding Bar */}
+          <div style={{ background: 'white', padding: '8px 16px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '12px', border: '1.5px solid #e2e8f0' }}>
+              <i className="fa-solid fa-location-dot" style={{ color: '#ef4444', fontSize: '16px' }}></i>
+              <input 
+                type="text" 
+                placeholder="Set delivery area (e.g. Noida)" 
+                value={locationInput} 
+                onChange={e => setLocationInput(e.target.value)} 
+                onKeyDown={e => e.key === 'Enter' && handleLocationSearch()}
+                style={{ border: 'none', outline: 'none', width: '100%', fontSize: '14px', fontWeight: 600 }} 
+              />
+              <button onClick={handleLocationSearch} disabled={isLocating} style={{ background: '#f1f5f9', color: 'var(--text-main)', border: 'none', padding: '8px 12px', borderRadius: '10px', fontWeight: 800, cursor: 'pointer' }}>
+                {isLocating ? <i className="fa-solid fa-spinner fa-spin"></i> : 'Go'}
+              </button>
+          </div>
+
+          {/* Product Search Bar */}
+          <div style={{ background: 'white', padding: '10px 16px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '12px', border: '1.5px solid var(--brand-primary)' }}>
+              <i className="fa-solid fa-radar" style={{ color: 'var(--brand-primary)', fontSize: '18px' }}></i>
+              <input 
+                type="text" 
+                placeholder="Find 'Atta' nearby..." 
+                value={khojSearch} 
+                onChange={e => setKhojSearch(e.target.value)} 
+                onKeyDown={e => e.key === 'Enter' && handleKhojSearch()}
+                style={{ border: 'none', outline: 'none', width: '100%', fontSize: '15px', fontWeight: 600 }} 
+              />
+              <button onClick={handleKhojSearch} disabled={isSearching} style={{ background: 'var(--brand-primary)', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                {isSearching ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-magnifying-glass"></i>}
+              </button>
+          </div>
       </div>
 
-      <div style={{ position: 'absolute', top: '90px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
+      <div style={{ position: 'absolute', top: '150px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
         <button onClick={clearRoute} style={{ background: 'white', color: 'var(--text-main)', border: '1px solid var(--border)', padding: '10px', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }} title="Recenter">
           <i className="fa-solid fa-location-crosshairs"></i>
         </button>
