@@ -1,3 +1,4 @@
+// File: src/App.tsx
 import { Routes, Route, HashRouter } from 'react-router-dom';
 
 import Inventory from './pages/merchant/Inventory';
@@ -9,12 +10,13 @@ import Dashboard from './pages/merchant/Dashboard';
 import Settings from './pages/merchant/Settings';
 import { Login } from './pages/auth/Login';
 import Reports from './pages/merchant/Reports';
-import { CustomerPortal } from './pages/customer/CustomerPortal';
 import FinanceHQ from './pages/merchant/FinanceHQ';
 import Forecast from './pages/merchant/Forecast';
 import { AI } from './pages/merchant/AI';
 import { Landing } from './pages/public/Landing';
 import { PwaUpdatePrompt } from './components/shared/PwaUpdatePrompt';
+
+// 🛑 REMOVED CustomerPortal IMPORT
 
 function App() {
   return (
@@ -22,14 +24,12 @@ function App() {
       <PwaUpdatePrompt />
     
       <Routes>
-        {/* FIX: Change path from "/BharatPOSV2/" back to "/" */}
         <Route path="/" element={<Landing />} />
-        
-        {/* Public Login Route */}
         <Route path="/login" element={<Login />} />
-        <Route path="/khata-app" element={<CustomerPortal />} />
+        
+        {/* 🛑 REMOVED /khata-app ROUTE */}
 
-        {/* Everything inside this Route will have the Sidebar wrapped around it */}
+        {/* Merchant App Routes */}
         <Route element={<AppLayout />}>
           <Route path="/pos" element={<PointOfSale />} />
           <Route path="/reports" element={<Reports />} />
