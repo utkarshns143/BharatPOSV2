@@ -24,7 +24,7 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [userLoc, setUserLoc] = useState<[number, number] | null>(null);
 
-  // 1. INITIALIZE MAP (Only Once)
+  // 1. INITIALIZE MAP
   useEffect(() => {
     const initMap = () => {
       const L = (window as any).L;
@@ -35,23 +35,18 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
         return;
       }
 
-      // Prevent "Map already initialized" error
+      // Prevent "already initialized" error
       if (mapRef.current || !mapContainerRef.current) return;
 
-      // Default center (India)
       const initialLoc: [number, number] = [20.5937, 78.9629];
       
-      // Create Map
       mapRef.current = L.map(mapContainerRef.current, { zoomControl: false }).setView(initialLoc, 5);
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(mapRef.current);
-      
-      // Create Marker Layer Group
       markersRef.current = L.layerGroup().addTo(mapRef.current);
 
-      // Draw Base Shops
+      // Draw all base shops with strict GPS checking
       drawBaseShops(L);
 
-      // Get Actual User Location
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -59,7 +54,6 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
             setUserLoc(loc);
             mapRef.current.setView(loc, 13);
             
-            // User Location Dot
             L.circleMarker(loc, { radius: 8, fillColor: '#3b82f6', color: '#fff', weight: 3, opacity: 1, fillOpacity: 1 })
              .addTo(mapRef.current)
              .bindPopup("You are here");
@@ -69,9 +63,9 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
         );
       }
 
-      // Safe Event Delegation for Routing (Catches clicks inside popups)
-      mapRef.current.on('popupopen', () => {
-        const routeBtn = document.getElementById('khoj-route-btn');
+      // Safe Event Delegation for Routing Buttons inside Popups
+      mapRef.current.on('popupopen', (e: any) => {
+        const routeBtn = e.popup._contentNode.querySelector('.khoj-route-btn');
         if (routeBtn) {
           routeBtn.onclick = () => {
             const lat = Number(routeBtn.getAttribute('data-lat'));
@@ -85,16 +79,15 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
 
     initMap();
 
-    // Cleanup on unmount
     return () => {
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
       }
     };
-  }, []); // Run only once on mount
+  }, []); 
 
-  // 2. FIX GREY MAP BUG (Resize when tab becomes visible)
+  // Fix Map Grey Box Bug
   useEffect(() => {
     if (isActive && mapRef.current) {
       setTimeout(() => {
@@ -103,33 +96,44 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
     }
   }, [isActive]);
 
-  // Helper: Draw all shops as basic dots
+  // --- HELPER: Draw Base Shops (Now Interactable!) ---
   const drawBaseShops = (L: any) => {
     if (!markersRef.current) return;
-    Object.values(shopsMap || {}).forEach(shop => {
-      if (shop.lat && shop.lng) {
+    
+    Object.values(shopsMap || {}).forEach((shop: any) => {
+      // 🛑 STRICT CHECK: Only draw if lat/lng are valid numbers!
+      if (typeof shop.lat === 'number' && typeof shop.lng === 'number' && !isNaN(shop.lat)) {
         const dotIcon = L.divIcon({ className: 'custom-div-icon', iconSize: [14, 14] });
-        L.marker([shop.lat, shop.lng], { icon: dotIcon }).addTo(markersRef.current);
+        
+        const popupHtml = `
+          <div style="text-align:center; min-width:120px; font-family: 'Plus Jakarta Sans', sans-serif;">
+            <div style="font-weight:800; font-size:14px; color:#1e293b; margin-bottom:8px;">${shop.name}</div>
+            <button class="khoj-route-btn" data-lat="${shop.lat}" data-lng="${shop.lng}" style="width:100%; background:#6366f1; color:white; border:none; padding:6px; border-radius:6px; font-weight:800; cursor:pointer;">
+              Get Route
+            </button>
+          </div>
+        `;
+
+        L.marker([shop.lat, shop.lng], { icon: dotIcon })
+         .addTo(markersRef.current)
+         .bindPopup(popupHtml); // Makes the dot clickable!
       }
     });
   };
 
-  // Helper: Draw Route Line
+  // --- HELPER: Draw Route ---
   const drawRoute = (targetLat: number, targetLng: number) => {
     const L = (window as any).L;
-    if (!L || !L.Routing) return alert("Routing engine is still loading...");
-    if (!userLoc) return alert("Please enable GPS location to get directions.");
+    if (!L || !L.Routing) return alert("Routing engine is loading...");
+    if (!userLoc) return alert("Please enable GPS location for directions.");
 
-    // Clear old route
     if (routingRef.current) {
       mapRef.current.removeControl(routingRef.current);
     }
 
     routingRef.current = L.Routing.control({
       waypoints: [L.latLng(userLoc[0], userLoc[1]), L.latLng(targetLat, targetLng)],
-      routeWhileDragging: false, 
-      addWaypoints: false, 
-      show: false, // Hides the bulky text directions
+      routeWhileDragging: false, addWaypoints: false, show: false,
       lineOptions: { styles: [{ color: '#6366f1', opacity: 0.8, weight: 6 }] }
     }).addTo(mapRef.current);
 
@@ -144,24 +148,21 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
       routingRef.current = null;
       setMapDistance(null);
     }
-    if (userLoc && mapRef.current) {
-      mapRef.current.setView(userLoc, 13);
-    }
+    if (userLoc && mapRef.current) mapRef.current.setView(userLoc, 13);
   };
 
-  // 3. SEARCH LOGIC
+  // --- SEARCH LOGIC ---
   const handleKhojSearch = async () => {
+    const L = (window as any).L;
     if (!khojSearch.trim()) {
-      // If search is empty, just reset the map
       markersRef.current?.clearLayers();
-      drawBaseShops((window as any).L);
+      drawBaseShops(L);
       return;
     }
 
     setIsSearching(true);
-    const L = (window as any).L;
     markersRef.current?.clearLayers();
-    drawBaseShops(L); // Keep base dots
+    drawBaseShops(L); 
 
     try {
       const q = khojSearch.toLowerCase().trim();
@@ -171,11 +172,13 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
       prodSnap.forEach(d => {
         const p = d.data();
         const sId = d.ref.parent.parent?.id;
+        const shop = sId ? shopsMap[sId] : null;
         
-        if (p.name?.toLowerCase().includes(q) && sId && shopsMap[sId]) {
+        // 🛑 STRICT CHECK: Shop MUST have valid numbers to be included in search!
+        if (p.name?.toLowerCase().includes(q) && sId && shop && typeof shop.lat === 'number') {
           const price = p.variants?.[0]?.price || 0;
           if (!foundShops[sId]) {
-            foundShops[sId] = { shop: shopsMap[sId], matches: 1, minPrice: price };
+            foundShops[sId] = { shop: shop, matches: 1, minPrice: price };
           } else {
             foundShops[sId].matches += 1;
             if (price < foundShops[sId].minPrice) foundShops[sId].minPrice = price;
@@ -194,22 +197,19 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
 
         foundKeys.forEach(key => {
           const { shop, matches, minPrice } = foundShops[key];
-          
           const popupHtml = `
             <div style="text-align:center; min-width:140px; font-family: 'Plus Jakarta Sans', sans-serif;">
               <div style="font-weight:800; font-size:15px; color:#1e293b; margin-bottom:4px;">${shop.name}</div>
               <div style="font-size:12px; color:#64748b; font-weight:600; margin-bottom:8px;">${matches} items match</div>
               <div style="font-size:14px; color:#10b981; font-weight:800; margin-bottom:12px;">Starts ₹${minPrice}</div>
-              <button id="khoj-route-btn" data-lat="${shop.lat}" data-lng="${shop.lng}" style="width:100%; background:#6366f1; color:white; border:none; padding:8px; border-radius:8px; font-weight:800; cursor:pointer;">
+              <button class="khoj-route-btn" data-lat="${shop.lat}" data-lng="${shop.lng}" style="width:100%; background:#6366f1; color:white; border:none; padding:8px; border-radius:8px; font-weight:800; cursor:pointer;">
                 Get Route
               </button>
             </div>
           `;
-
           L.marker([shop.lat, shop.lng], { icon: pinIcon }).addTo(markersRef.current).bindPopup(popupHtml);
         });
 
-        // Zoom to fit all found shops
         const group = new L.featureGroup(markersRef.current.getLayers());
         mapRef.current.fitBounds(group.getBounds().pad(0.1));
       } else {
@@ -224,35 +224,21 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
   };
 
   return (
-<main className={`tab-view ${isActive ? 'active' : ''}`} style={{ padding: 0, position: 'relative', display: isActive ? 'block' : 'none' }}>      
-      {/* The Map Container */}
+    <main className={`tab-view ${isActive ? 'active' : ''}`} style={{ padding: 0, position: 'relative', display: isActive ? 'block' : 'none' }}>
       <div ref={mapContainerRef} style={{ width: '100%', height: 'calc(100vh - 140px)', borderRadius: '24px 24px 0 0', zIndex: 1 }}></div>
       
-      {/* Floating Search Bar */}
       <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px', zIndex: 1000, background: 'white', padding: '10px 16px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '12px', border: '1.5px solid var(--brand-primary)' }}>
           <i className="fa-solid fa-radar" style={{ color: 'var(--brand-primary)', fontSize: '18px' }}></i>
-          <input 
-            type="text" 
-            placeholder="Find 'Atta' nearby..." 
-            value={khojSearch} 
-            onChange={e => setKhojSearch(e.target.value)} 
-            onKeyDown={e => e.key === 'Enter' && handleKhojSearch()}
-            style={{ border: 'none', outline: 'none', width: '100%', fontSize: '15px', fontWeight: 600 }} 
-          />
+          <input type="text" placeholder="Find 'Atta' nearby..." value={khojSearch} onChange={e => setKhojSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleKhojSearch()} style={{ border: 'none', outline: 'none', width: '100%', fontSize: '15px', fontWeight: 600 }} />
           <button onClick={handleKhojSearch} disabled={isSearching} style={{ background: 'var(--brand-primary)', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer', transition: '0.2s' }}>
             {isSearching ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-magnifying-glass"></i>}
           </button>
       </div>
 
-      {/* Floating Route Info & Controls */}
       <div style={{ position: 'absolute', top: '90px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
-        
-        {/* Recenter Button */}
         <button onClick={clearRoute} style={{ background: 'white', color: 'var(--text-main)', border: '1px solid var(--border)', padding: '10px', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }} title="Recenter">
           <i className="fa-solid fa-location-crosshairs"></i>
         </button>
-
-        {/* Distance Badge */}
         {mapDistance && (
           <div style={{ background: 'var(--brand-primary)', color: 'white', padding: '10px 20px', borderRadius: '20px', fontWeight: 800, fontSize: '13px', boxShadow: '0 4px 15px rgba(99, 102, 241, 0.4)', display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.3s' }}>
             <i className="fa-solid fa-route"></i> {mapDistance}
@@ -260,7 +246,6 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
           </div>
         )}
       </div>
-
     </main>
   );
 };
