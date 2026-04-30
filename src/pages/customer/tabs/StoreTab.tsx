@@ -106,7 +106,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({ isActive, onOrderPlaced }) =
   };
 
   return (
-    <main className={`tab-view ${isActive ? 'active' : ''}`}>
+    <main className={`tab-view ${isActive ? 'active' : ''}`} style={{ display: isActive ? 'block' : 'none' }}>
       {!activeShopId || activeShopId === 'ALL' ? (
         <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-sub)', fontWeight: 700 }}>Select a specific shop from the top menu to view its catalog.</div>
       ) : (

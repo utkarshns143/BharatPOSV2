@@ -224,8 +224,7 @@ export const KhojTab: React.FC<KhojTabProps> = ({ isActive }) => {
   };
 
   return (
-    <main className={`tab-view ${isActive ? 'active' : ''}`} style={{ padding: 0, position: 'relative' }}>
-      
+<main className={`tab-view ${isActive ? 'active' : ''}`} style={{ padding: 0, position: 'relative', display: isActive ? 'block' : 'none' }}>      
       {/* The Map Container */}
       <div ref={mapContainerRef} style={{ width: '100%', height: 'calc(100vh - 140px)', borderRadius: '24px 24px 0 0', zIndex: 1 }}></div>
       

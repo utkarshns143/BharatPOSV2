@@ -41,7 +41,7 @@ export const BillsTab: React.FC<BillsTabProps> = ({ isActive, onOpenReceipt }) =
   }, [myBills, activeShopId]);
 
   return (
-    <main className={`tab-view ${isActive ? 'active' : ''}`}>
+    <main className={`tab-view ${isActive ? 'active' : ''}`} style={{ display: isActive ? 'block' : 'none' }}>
       <div className="kpi-grid">
         <div className="kpi-card">
           <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-sub)', textTransform: 'uppercase' }}>Total Lifetime Spent Here</div>
