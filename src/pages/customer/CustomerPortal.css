@@ -63,3 +63,20 @@
 .custom-div-icon { background: white; border: 3px solid var(--brand-primary); border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
 .pin-icon { font-size: 38px; color: var(--brand-accent); filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3)); }
 .leaflet-routing-container { display: none !important; }
+
+/* Tab View visibility controls */
+.tab-view {
+  display: none;
+  padding: 16px 16px 90px 16px;
+  animation: fadeIn 0.3s ease;
+  min-height: calc(100vh - 140px);
+}
+
+.tab-view.active {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

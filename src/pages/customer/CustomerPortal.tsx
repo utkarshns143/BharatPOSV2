@@ -237,6 +237,10 @@ export const CustomerPortal: React.FC = () => {
           });
         };
       }
+      
+      else {
+        setTimeout(() => mapRef.current.invalidateSize(), 100);
+      }
     }
   }, [activeTab, shopsMap]);
 
