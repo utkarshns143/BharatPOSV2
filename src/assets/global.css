@@ -84,7 +84,7 @@ body {
 /* MOBILE RESPONSIVE OVERRIDES */
 @media(max-width: 900px) {
   .pos-container { flex-direction: column; }
-  .left-pane { width: 100%; padding-bottom: 90px; /* Room for FAB */ }
+  .left-pane { width: 100%; padding-bottom: 0px; /* Room for FAB */ }
   .right-pane {
     position: fixed;
     top: 0;
