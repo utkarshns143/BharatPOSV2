@@ -282,10 +282,31 @@ export const PointOfSale: React.FC = () => {
         </div>
 
         <div className="product-grid">
-          <div className="prod-card" onClick={handleCustomService} style={{ border: '2px dashed var(--primary)', background: '#eff6ff', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="pc-cat" style={{ color: 'var(--primary)' }}>Custom Request</div>
-            <div className="pc-name" style={{ color: 'var(--primary)', fontSize: '16px' }}>Add Service / Item</div>
-            <div style={{ fontSize: '32px', textAlign: 'center', color: 'var(--primary)', margin: '10px 0' }}><i className="fa-solid fa-screwdriver-wrench"></i></div>
+          
+          {/* SLIM & COMPACT CUSTOM REQUEST BANNER */}
+          <div 
+            onClick={handleCustomService} 
+            style={{ 
+              gridColumn: '1 / -1', /* This forces it to span the full width of the row! */
+              border: '1.5px dashed var(--primary)', 
+              background: '#eff6ff', 
+              borderRadius: '12px',
+              padding: '10px 15px',
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '12px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+              marginBottom: '4px'
+            }}
+          >
+            <div style={{ background: 'var(--primary)', color: 'white', width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+              <i className="fa-solid fa-screwdriver-wrench"></i>
+            </div>
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--primary)' }}>Add Custom Item</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Enter manual amount</div>
+            </div>
           </div>
 
           {filteredProducts.map((p) => (
